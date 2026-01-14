@@ -15,6 +15,7 @@ public class NetworkConfig
     public bool UseNetworkStorage { get; set; } = true;
     public bool AutoSyncOnStartup { get; set; } = true;
     public int SyncIntervalMinutes { get; set; } = 5;
+    public int InactivityTimeoutMinutes { get; set; } = 30;
     public DateTime LastSyncAt { get; set; }
 }
 

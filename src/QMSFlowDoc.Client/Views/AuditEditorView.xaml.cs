@@ -196,6 +196,15 @@ public sealed partial class AuditEditorView : Page
             try
             {
                 var docService = ((App)Application.Current).DocumentService;
+                
+                // Refresh connection status to ensure we use API if available
+                await docService.InitializeAsync();
+
+                if (docService.IsLocalMode)
+                {
+                    FileNameText.Text = "Error: Modo Offline no permite vincular documentos a Auditoría Online.";
+                    return;
+                }
 
                 // 1. Fetch Document Types
                 var typeList = await docService.GetDocumentTypesAsync();
@@ -204,14 +213,14 @@ public sealed partial class AuditEditorView : Page
                 if (reportType == null) throw new Exception("No se encontraron tipos de documentos configurados.");
 
                 // Lookup Folder
-                var folderId = await docService.GetOrCreateFolderIdAsync("AUDITORIA");
+                var folderId = await docService.GetOrCreateFolderIdAsync("AUDITORIA"); // This may be null, which is fine (Root)
 
                 // 2. Create Document Metadata
                 var createReq = new CreateDocumentRequest(
                    DocCode: "AUD-" + DateTime.Now.Ticks.ToString().Substring(10),
                    Title: $"Reporte Auditoría {TitleBox.Text}",
                    DocumentTypeId: reportType.Id,
-                   FolderId: folderId, // Use AUDITORIA folder
+                   FolderId: folderId, // Use AUDITORIA folder or null
                    Area: "Improvement",
                    Process: "Audit",
                    Status: DocumentStatus.APPROVED, // Auto-approved for records
@@ -233,21 +242,28 @@ public sealed partial class AuditEditorView : Page
                         _reportDocumentId = doc.Id;
                         FileNameText.Text = file.Name;
                         ViewReportButton.Visibility = Visibility.Visible;
+                        
+                        // Auto-save the audit link immediately to prevent sync issues if user forgets to click Save
+                        if (_auditId.HasValue)
+                        {
+                            // Trigger implicit save of the link
+                            // Actually, better wait for explicit save, but show success
+                            FileNameText.Text = $"{file.Name} (Vinculado - Recuerde Guardar)";
+                        }
                     }
                     else
                     {
-                        FileNameText.Text = "Error al subir contenido.";
+                        FileNameText.Text = "Error al subir contenido al servidor.";
                     }
                 }
                 else
                 {
-                    FileNameText.Text = "Error iniciando carga (Documento nulo).";
-                    // Debug info: check if Service is local
+                    FileNameText.Text = "Error: El servidor rechazó la creación del documento.";
                 }
             }
             catch (Exception ex)
             {
-                FileNameText.Text = "Error: " + ex.Message;
+                FileNameText.Text = "Error Crítico: " + ex.Message;
             }
         }
     }

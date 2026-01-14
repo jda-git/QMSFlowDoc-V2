@@ -76,13 +76,18 @@ public sealed partial class ImprovementView : Page
         Frame.Navigate(typeof(RiskEditorView));
     }
 
-    private void RisksList_ItemClick(object sender, ItemClickEventArgs e)
+    // Changed from ItemClick to DoubleTapped for editing
+    private void RisksList_DoubleTapped(object sender, Microsoft.UI.Xaml.Input.DoubleTappedRoutedEventArgs e)
     {
-         if (e.ClickedItem is RiskListDto risk)
+        // Get the datum from the source if possible, or use SelectedItem
+        if (RisksList.SelectedItem is RiskListDto risk)
         {
-            Frame.Navigate(typeof(RiskEditorView), risk.Id);
+             Frame.Navigate(typeof(RiskEditorView), risk.Id);
         }
     }
+
+    // Unused ItemClick (optional: keep for selection feedback only)
+    private void RisksList_ItemClick(object sender, ItemClickEventArgs e) { }
 
     private async void ExportMatrix_Click(object sender, RoutedEventArgs e)
     {
@@ -108,13 +113,15 @@ public sealed partial class ImprovementView : Page
         }
     }
 
-    private void AuditsList_ItemClick(object sender, ItemClickEventArgs e)
+    private void AuditsList_DoubleTapped(object sender, Microsoft.UI.Xaml.Input.DoubleTappedRoutedEventArgs e)
     {
-        if (e.ClickedItem is AuditListDto audit)
+        if (AuditsList.SelectedItem is AuditListDto audit)
         {
             Frame.Navigate(typeof(AuditEditorView), audit.Id);
         }
     }
+
+    private void AuditsList_ItemClick(object sender, ItemClickEventArgs e) { }
 
     private async void AddAudit_Click(object sender, RoutedEventArgs e)
     {
@@ -138,5 +145,143 @@ public sealed partial class ImprovementView : Page
     private void AddReview_Click(object sender, RoutedEventArgs e)
     {
         Frame.Navigate(typeof(ReviewEditorView));
+    }
+
+    private void ReviewsList_DoubleTapped(object sender, Microsoft.UI.Xaml.Input.DoubleTappedRoutedEventArgs e)
+    {
+        if (ReviewsList.SelectedItem is ManagementReviewListDto review)
+        {
+            Frame.Navigate(typeof(ReviewEditorView), review.Id);
+        }
+    }
+
+    private async void OpenPdf_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is Button btn && btn.Tag is Guid docId)
+        {
+            if (docId == Guid.Empty)
+            {
+                 // Should be prevented by binding, but safety check
+                 await ShowMessage("Documento no disponible", "El ID del documento es inválido.");
+                 return;
+            }
+
+            try
+            {
+                // Usage of DocumentService to get file logic
+                var docService = ((App)Application.Current).DocumentService;
+                var bytes = await docService.GetFileContentAsync(docId);
+                
+                if (bytes != null && bytes.Length > 0)
+                {
+                    // Save to temp and open
+                    var tempFolder = Windows.Storage.ApplicationData.Current.TemporaryFolder;
+                    var file = await tempFolder.CreateFileAsync($"doc_{docId}.pdf", Windows.Storage.CreationCollisionOption.ReplaceExisting);
+                    await Windows.Storage.FileIO.WriteBytesAsync(file, bytes);
+                    
+                    var options = new Windows.System.LauncherOptions { DisplayApplicationPicker = false };
+                    await Windows.System.Launcher.LaunchFileAsync(file, options);
+                }
+                else
+                {
+                    await ShowMessage("Documento no encontrado", "No se pudo descargar el contenido del documento. Verifique si existe en el servidor.");
+                }
+            }
+            catch (Exception ex)
+            {
+                 await ShowMessage("Error al abrir PDF", ex.Message);
+            }
+        }
+        else
+        {
+             await ShowMessage("Aviso", "Este registro no tiene un documento adjunto.");
+        }
+    }
+
+    private async void DeleteAudit_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is Button btn && btn.Tag is Guid auditId)
+        {
+             var confirm = await new ContentDialog
+            {
+                Title = "Confirmar Eliminación",
+                Content = "¿Está seguro de que desea eliminar esta auditoría? Esta acción no se puede deshacer.",
+                PrimaryButtonText = "Eliminar",
+                CloseButtonText = "Cancelar",
+                DefaultButton = ContentDialogButton.Close,
+                XamlRoot = this.XamlRoot
+            }.ShowAsync();
+
+            if (confirm == ContentDialogResult.Primary)
+            {
+                try
+                {
+                    var service = ((App)Application.Current).ImprovementService;
+                    var success = await service.DeleteAuditAsync(auditId);
+                    if (success)
+                    {
+                        var audit = Audits.FirstOrDefault(a => a.Id == auditId);
+                        if (audit != null) Audits.Remove(audit);
+                    }
+                    else
+                    {
+                        await ShowMessage("Error", "No se pudo eliminar la auditoría.");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    await ShowMessage("Error", ex.Message);
+                }
+            }
+        }
+    }
+
+    private async void DeleteReview_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is Button btn && btn.Tag is Guid reviewId)
+        {
+             var confirm = await new ContentDialog
+            {
+                Title = "Confirmar Eliminación",
+                Content = "¿Está seguro de que desea eliminar esta revisión? Esta acción no se puede deshacer.",
+                PrimaryButtonText = "Eliminar",
+                CloseButtonText = "Cancelar",
+                DefaultButton = ContentDialogButton.Close,
+                XamlRoot = this.XamlRoot
+            }.ShowAsync();
+
+            if (confirm == ContentDialogResult.Primary)
+            {
+                try
+                {
+                    var service = ((App)Application.Current).ImprovementService;
+                    var success = await service.DeleteReviewAsync(reviewId);
+                    if (success)
+                    {
+                        var review = Reviews.FirstOrDefault(r => r.Id == reviewId);
+                        if (review != null) Reviews.Remove(review);
+                    }
+                    else
+                    {
+                        await ShowMessage("Error", "No se pudo eliminar la revisión.");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    await ShowMessage("Error", ex.Message);
+                }
+            }
+        }
+    }
+
+    private async Task ShowMessage(string title, string content)
+    {
+        await new ContentDialog
+        {
+            Title = title,
+            Content = content,
+            CloseButtonText = "OK",
+            XamlRoot = this.XamlRoot
+        }.ShowAsync();
     }
 }

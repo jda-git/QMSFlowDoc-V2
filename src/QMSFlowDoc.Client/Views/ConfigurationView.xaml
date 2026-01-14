@@ -80,6 +80,14 @@
                             <TextBlock Text="{x:Bind SyncIntervalSlider.Value, Mode=OneWay}" 
                                        FontSize="12" Foreground="Gray" HorizontalAlignment="Right" />
                         </StackPanel>
+
+                        <StackPanel Spacing="8">
+                            <TextBlock Text="Tiempo de inactividad para cierre de sesión (minutos)" />
+                            <Slider x:Name="InactivitySlider" Minimum="5" Maximum="60" Value="30" 
+                                    StepFrequency="5" TickFrequency="5" TickPlacement="BottomRight" />
+                            <TextBlock Text="{x:Bind InactivitySlider.Value, Mode=OneWay}" 
+                                       FontSize="12" Foreground="Gray" HorizontalAlignment="Right" />
+                        </StackPanel>
                         
                         <Button Content="Forzar Sincronización Completa" Click="ForceSync_Click" />
                         <Button Content="Ver Log de Sincronización" Click="ViewSyncLog_Click" />

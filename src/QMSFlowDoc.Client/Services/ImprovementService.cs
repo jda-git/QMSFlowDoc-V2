@@ -23,12 +23,14 @@ public interface IImprovementService
     Task<AuditPlan?> CreateAuditAsync(CreateAuditRequest request);
     Task<bool> UpdateAuditAsync(Guid id, CreateAuditRequest request);
     Task<AuditFinding?> RegisterFindingAsync(RegisterFindingRequest request);
+    Task<bool> DeleteAuditAsync(Guid id);
 
     // Reviews
     Task<IEnumerable<ManagementReviewListDto>> GetReviewsAsync();
     Task<ManagementReview?> GetReviewByIdAsync(Guid id);
     Task<ManagementReview?> CreateReviewAsync(CreateManagementReviewRequest request);
     Task<bool> UpdateReviewAsync(Guid id, CreateManagementReviewRequest request);
+    Task<bool> DeleteReviewAsync(Guid id);
 }
 
 public class ImprovementService : IImprovementService
@@ -83,19 +85,40 @@ public class ImprovementService : IImprovementService
     public async Task<AuditPlan?> CreateAuditAsync(CreateAuditRequest request)
     {
         var response = await _httpClient.PostAsJsonAsync("improvement/audits", request);
-        return response.IsSuccessStatusCode ? await response.Content.ReadFromJsonAsync<AuditPlan>() : null;
+        if (!response.IsSuccessStatusCode)
+        {
+            var error = await response.Content.ReadAsStringAsync();
+            throw new Exception($"Server Error ({response.StatusCode}): {error}");
+        }
+        return await response.Content.ReadFromJsonAsync<AuditPlan>();
     }
 
     public async Task<bool> UpdateAuditAsync(Guid id, CreateAuditRequest request)
     {
         var response = await _httpClient.PutAsJsonAsync($"improvement/audits/{id}", request);
-        return response.IsSuccessStatusCode;
+        if (!response.IsSuccessStatusCode)
+        {
+             var error = await response.Content.ReadAsStringAsync();
+             throw new Exception($"Server Error ({response.StatusCode}): {error}");
+        }
+        return true;
     }
 
     public async Task<AuditFinding?> RegisterFindingAsync(RegisterFindingRequest request)
     {
         var response = await _httpClient.PostAsJsonAsync("improvement/findings", request);
-        return response.IsSuccessStatusCode ? await response.Content.ReadFromJsonAsync<AuditFinding>() : null;
+         if (!response.IsSuccessStatusCode)
+        {
+            var error = await response.Content.ReadAsStringAsync();
+            throw new Exception($"Server Error ({response.StatusCode}): {error}");
+        }
+        return await response.Content.ReadFromJsonAsync<AuditFinding>();
+    }
+
+    public async Task<bool> DeleteAuditAsync(Guid id)
+    {
+        var response = await _httpClient.DeleteAsync($"improvement/audits/{id}");
+        return response.IsSuccessStatusCode;
     }
 
     public async Task<IEnumerable<ManagementReviewListDto>> GetReviewsAsync()
@@ -112,12 +135,28 @@ public class ImprovementService : IImprovementService
     public async Task<ManagementReview?> CreateReviewAsync(CreateManagementReviewRequest request)
     {
         var response = await _httpClient.PostAsJsonAsync("improvement/reviews", request);
-        return response.IsSuccessStatusCode ? await response.Content.ReadFromJsonAsync<ManagementReview>() : null;
+         if (!response.IsSuccessStatusCode)
+        {
+            var error = await response.Content.ReadAsStringAsync();
+            throw new Exception($"Server Error ({response.StatusCode}): {error}");
+        }
+        return await response.Content.ReadFromJsonAsync<ManagementReview>();
     }
 
     public async Task<bool> UpdateReviewAsync(Guid id, CreateManagementReviewRequest request)
     {
         var response = await _httpClient.PutAsJsonAsync($"improvement/reviews/{id}", request);
+         if (!response.IsSuccessStatusCode)
+        {
+            var error = await response.Content.ReadAsStringAsync();
+            throw new Exception($"Server Error ({response.StatusCode}): {error}");
+        }
+        return true;
+    }
+
+    public async Task<bool> DeleteReviewAsync(Guid id)
+    {
+        var response = await _httpClient.DeleteAsync($"improvement/reviews/{id}");
         return response.IsSuccessStatusCode;
     }
 }

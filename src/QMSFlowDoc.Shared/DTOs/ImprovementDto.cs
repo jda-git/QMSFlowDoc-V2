@@ -39,10 +39,12 @@ public class AuditListDto
     public AuditStatus Status { get; set; }
     public int FindingCount { get; set; }
 
+    public Guid? ReportDocumentId { get; set; }
+
     public AuditListDto() { }
-    public AuditListDto(Guid id, string title, DateTime date, AuditStatus status, int findings)
+    public AuditListDto(Guid id, string title, DateTime date, AuditStatus status, int findings, Guid? reportDocId)
     {
-        Id = id; Title = title; ScheduledDate = date; Status = status; FindingCount = findings;
+        Id = id; Title = title; ScheduledDate = date; Status = status; FindingCount = findings; ReportDocumentId = reportDocId;
     }
 }
 
@@ -68,10 +70,12 @@ public class ManagementReviewListDto
     public DateTime ReviewDate { get; set; }
     public string Summary { get; set; } = string.Empty;
 
+    public Guid? MinutesDocumentId { get; set; }
+
     public ManagementReviewListDto() { }
-    public ManagementReviewListDto(Guid id, DateTime date, string summary)
+    public ManagementReviewListDto(Guid id, DateTime date, string summary, Guid? minutesDocId)
     {
-        Id = id; ReviewDate = date; Summary = summary;
+        Id = id; ReviewDate = date; Summary = summary; MinutesDocumentId = minutesDocId;
     }
 }
 

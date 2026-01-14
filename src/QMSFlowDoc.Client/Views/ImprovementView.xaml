@@ -28,7 +28,7 @@
                         <Button Content="Exportar Matriz" Click="ExportMatrix_Click" />
                         <ToggleSwitch x:Name="ActiveRisksFilter" Header="Solo Activos" OnContent="Sí" OffContent="No" IsOn="True" Toggled="Filter_Toggled" />
                     </StackPanel>
-                    <ListView Grid.Row="1" x:Name="RisksList" ItemsSource="{x:Bind Risks, Mode=OneWay}" SelectionMode="Single" IsItemClickEnabled="True" ItemClick="RisksList_ItemClick">
+                    <ListView Grid.Row="1" x:Name="RisksList" ItemsSource="{x:Bind Risks, Mode=OneWay}" SelectionMode="Single" IsItemClickEnabled="False" DoubleTapped="RisksList_DoubleTapped">
                         <ListView.HeaderTemplate>
                             <DataTemplate>
                                 <Grid Padding="12,0,0,0">
@@ -74,7 +74,7 @@
                     <StackPanel Orientation="Horizontal" Spacing="20" Margin="0,0,0,12">
                         <Button Content="Programar Auditoría" Click="AddAudit_Click" />
                     </StackPanel>
-                    <ListView Grid.Row="1" x:Name="AuditsList" ItemsSource="{x:Bind Audits, Mode=OneWay}" SelectionMode="Single" IsItemClickEnabled="True" ItemClick="AuditsList_ItemClick">
+                    <ListView Grid.Row="1" x:Name="AuditsList" ItemsSource="{x:Bind Audits, Mode=OneWay}" SelectionMode="Single" IsItemClickEnabled="False" DoubleTapped="AuditsList_DoubleTapped">
                         <ListView.HeaderTemplate>
                             <DataTemplate>
                                 <Grid Padding="12,0,0,0">
@@ -83,11 +83,14 @@
                                         <ColumnDefinition Width="*" />
                                         <ColumnDefinition Width="120" />
                                         <ColumnDefinition Width="100" />
+                                        <ColumnDefinition Width="60" />
+                                        <ColumnDefinition Width="60" />
                                     </Grid.ColumnDefinitions>
                                     <TextBlock Text="Fecha" FontWeight="Bold" Grid.Column="0" />
                                     <TextBlock Text="Título / Alcance" FontWeight="Bold" Grid.Column="1" />
                                     <TextBlock Text="Estado" FontWeight="Bold" Grid.Column="2" />
                                     <TextBlock Text="Hallazgos" FontWeight="Bold" Grid.Column="3" />
+                                    <SymbolIcon Symbol="Print" Grid.Column="4" HorizontalAlignment="Center" />
                                 </Grid>
                             </DataTemplate>
                         </ListView.HeaderTemplate>
@@ -99,11 +102,19 @@
                                         <ColumnDefinition Width="*" />
                                         <ColumnDefinition Width="120" />
                                         <ColumnDefinition Width="100" />
+                                        <ColumnDefinition Width="60" />
+                                        <ColumnDefinition Width="60" />
                                     </Grid.ColumnDefinitions>
                                     <TextBlock Text="{x:Bind ScheduledDate.ToString()}" Grid.Column="0" />
                                     <TextBlock Text="{x:Bind Title}" Grid.Column="1" />
                                     <TextBlock Text="{x:Bind Status.ToString()}" Grid.Column="2" />
                                     <TextBlock Text="{x:Bind FindingCount.ToString()}" Grid.Column="3" HorizontalAlignment="Center" />
+                                    <Button Grid.Column="4" Background="Transparent" BorderThickness="0" Click="OpenPdf_Click" Tag="{x:Bind ReportDocumentId}" HorizontalAlignment="Center">
+                                        <SymbolIcon Symbol="Print" />
+                                    </Button>
+                                    <Button Grid.Column="5" Background="Transparent" BorderThickness="0" Click="DeleteAudit_Click" Tag="{x:Bind Id}" HorizontalAlignment="Center" Foreground="Red">
+                                        <SymbolIcon Symbol="Cancel" />
+                                    </Button>
                                 </Grid>
                             </DataTemplate>
                         </ListView.ItemTemplate>
@@ -120,16 +131,19 @@
                     <StackPanel Orientation="Horizontal" Spacing="20" Margin="0,0,0,12">
                         <Button Content="Nueva Acta de Revisión" Click="AddReview_Click" />
                     </StackPanel>
-                    <ListView Grid.Row="1" x:Name="ReviewsList" ItemsSource="{x:Bind Reviews, Mode=OneWay}" SelectionMode="None">
+                    <ListView Grid.Row="1" x:Name="ReviewsList" ItemsSource="{x:Bind Reviews, Mode=OneWay}" SelectionMode="Single" IsItemClickEnabled="False" DoubleTapped="ReviewsList_DoubleTapped">
                         <ListView.HeaderTemplate>
                             <DataTemplate>
                                 <Grid Padding="12,0,0,0">
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="150" />
                                         <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="60" />
+                                        <ColumnDefinition Width="60" />
                                     </Grid.ColumnDefinitions>
                                     <TextBlock Text="Fecha" FontWeight="Bold" Grid.Column="0" />
                                     <TextBlock Text="Resumen de Decisiones" FontWeight="Bold" Grid.Column="1" />
+                                    <SymbolIcon Symbol="Print" Grid.Column="2" HorizontalAlignment="Center" />
                                 </Grid>
                             </DataTemplate>
                         </ListView.HeaderTemplate>
@@ -139,9 +153,17 @@
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="150" />
                                         <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="60" />
+                                        <ColumnDefinition Width="60" />
                                     </Grid.ColumnDefinitions>
                                     <TextBlock Text="{x:Bind ReviewDate.ToString()}" Grid.Column="0" />
                                     <TextBlock Text="{x:Bind Summary}" Grid.Column="1" />
+                                    <Button Grid.Column="2" Background="Transparent" BorderThickness="0" Click="OpenPdf_Click" Tag="{x:Bind MinutesDocumentId}" HorizontalAlignment="Center">
+                                        <SymbolIcon Symbol="Print" />
+                                    </Button>
+                                    <Button Grid.Column="3" Background="Transparent" BorderThickness="0" Click="DeleteReview_Click" Tag="{x:Bind Id}" HorizontalAlignment="Center" Foreground="Red">
+                                        <SymbolIcon Symbol="Cancel" />
+                                    </Button>
                                 </Grid>
                             </DataTemplate>
                         </ListView.ItemTemplate>

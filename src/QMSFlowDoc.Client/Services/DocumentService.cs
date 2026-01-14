@@ -24,13 +24,16 @@ public interface IDocumentService
     
     // New local mode methods
     Task<Document?> CreateDocumentWithFileAsync(string docCode, string title, DocumentStatus status, Guid? documentTypeId, int? reviewIntervalMonths, string versionLabel, string? area, string? process, byte[] fileBytes, string fileName, string subFolderName);
-    Task<Guid> GetOrCreateFolderIdAsync(string folderName);
+    Task<Guid?> GetOrCreateFolderIdAsync(string folderName);
     
     // Initialization
     Task InitializeAsync();
     
     // Audit Logging
     Task LogAsync(string action, string entityType, Guid? entityId, string details);
+    
+    // Status
+    bool IsLocalMode { get; }
 }
 
 public class DocumentService : IDocumentService
@@ -48,23 +51,29 @@ public class DocumentService : IDocumentService
         _networkConfig = new NetworkConfigStore();
         _localStore = localStore;
         
-        // Try to detect if API is available
-        try
-        {
-            var testTask = _httpClient.GetAsync("health");
-            testTask.Wait(TimeSpan.FromMilliseconds(500));
-            _useLocalMode = !testTask.Result.IsSuccessStatusCode;
-        }
-        catch
-        {
-            // API not available - use local mode
-            _useLocalMode = true;
-        }
-        
+        // Initialize status
+        CheckConnectionAsync().Wait(500);
+
         // Initialize local store if needed and not provided (legacy fallback, but should rely on injection)
         if (_useLocalMode && _localStore == null)
         {
             _localStore = new LocalDocumentStore(_networkConfig);
+        }
+    }
+    
+    public bool IsLocalMode => _useLocalMode;
+
+    private async Task CheckConnectionAsync()
+    {
+        try
+        {
+            using var cts = new System.Threading.CancellationTokenSource(2000);
+            var response = await _httpClient.GetAsync("health", cts.Token);
+            _useLocalMode = !response.IsSuccessStatusCode;
+        }
+        catch
+        {
+            _useLocalMode = true;
         }
     }
 
@@ -320,21 +329,42 @@ public class DocumentService : IDocumentService
         throw new NotImplementedException("API mode file upload not yet implemented");
     }
 
-    public async Task<Guid> GetOrCreateFolderIdAsync(string folderName)
+    public async Task<Guid?> GetOrCreateFolderIdAsync(string folderName)
     {
         if (_useLocalMode && _localStore != null)
         {
             return await _localStore.FindOrCreateFolderIdAsync(folderName);
         }
         
-        // For API mode, we assume backend handles it or we return empty/null if not supported strictly
-        // Ideally we would call an API endpoint. For now, returning Guid.Empty or handling via local fallback logic if hybrid.
-        // Assuming Local Mode for this specific user request context
-        return Guid.Empty; 
+        try
+        {
+            // 1. List Root Folders
+            var folders = await _httpClient.GetFromJsonAsync<IEnumerable<FolderDto>>("folders");
+            var existing = folders?.FirstOrDefault(f => f.Name.Equals(folderName, StringComparison.OrdinalIgnoreCase));
+            
+            if (existing != null) return existing.Id;
+
+            // 2. Create if not exists
+            // POST api/folders?name=XXX
+            var response = await _httpClient.PostAsync($"folders?name={Uri.EscapeDataString(folderName)}", null);
+            if (response.IsSuccessStatusCode)
+            {
+                var newFolder = await response.Content.ReadFromJsonAsync<Folder>();
+                return newFolder?.Id;
+            }
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Error getting online folder: {ex.Message}");
+        }
+
+        return null;
     }
 
     public async Task InitializeAsync()
     {
+        await CheckConnectionAsync();
+        
         if (_localStore != null)
         {
             await _localStore.InitializeAsync();

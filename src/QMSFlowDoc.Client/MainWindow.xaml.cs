@@ -15,6 +15,9 @@ public sealed partial class MainWindow : Window
     private readonly IAuthService _authService;
     private System.Threading.Timer? _statusUpdateTimer;
 
+    private DateTime _lastActivity = DateTime.Now;
+    private System.Threading.Timer? _inactivityTimer;
+
     public MainWindow()
     {
         this.InitializeComponent();
@@ -30,7 +33,61 @@ public sealed partial class MainWindow : Window
             null,
             TimeSpan.FromSeconds(2),
             TimeSpan.FromSeconds(10));
+
+        // Start inactivity monitor (check every 1 minute)
+        _inactivityTimer = new System.Threading.Timer(
+            CheckInactivity,
+            null,
+            TimeSpan.FromMinutes(1),
+            TimeSpan.FromMinutes(1));
+            
+        // Hook global events for activity tracking
+        this.Content.PointerMoved += (s, e) => ResetInactivity();
+        this.Content.KeyDown += (s, e) => ResetInactivity();
+        this.Content.PointerPressed += (s, e) => ResetInactivity();
     }
+
+    private void ResetInactivity()
+    {
+        _lastActivity = DateTime.Now;
+    }
+
+    private async void CheckInactivity(object? state)
+    {
+        if (!DispatcherQueue.HasThreadAccess)
+        {
+            DispatcherQueue.TryEnqueue(() => CheckInactivity(state));
+            return;
+        }
+
+        if (!_authService.IsAuthenticated) return;
+
+        var app = (App)Application.Current;
+        var config = await app.NetworkConfigStore.LoadAsync();
+        var timeoutMinutes = config.InactivityTimeoutMinutes > 0 ? config.InactivityTimeoutMinutes : 30;
+
+        if ((DateTime.Now - _lastActivity).TotalMinutes >= timeoutMinutes)
+        {
+            PerformLogout("Sesión cerrada por inactividad.");
+        }
+    }
+
+    private void Logout_Tapped(object sender, Microsoft.UI.Xaml.Input.TappedRoutedEventArgs e)
+    {
+        PerformLogout("Sesión cerrada correctamente.");
+    }
+
+    private void PerformLogout(string message)
+    {
+        _authService.Logout();
+        // Reset timer or just let it run (it checks IsAuthenticated)
+        
+        ShowLogin();
+        
+        // Show feedback on Login page (optional, or just navigate)
+        // Ideally pass parameter to LoginView but avoiding complexity for now
+    }
+
 
     private void SyncEngine_SyncStatusChanged(string status)
     {

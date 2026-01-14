@@ -112,6 +112,7 @@
                     <NavigationViewItemSeparator />
                     
                     <NavigationViewItem Content="Cambiar Contraseña" Icon="Permissions" Tapped="ChangePassword_Tapped" />
+                    <NavigationViewItem Content="Cerrar Sesión" Icon="Cancel" Tapped="Logout_Tapped" Foreground="Red" />
                 </StackPanel>
             </NavigationView.PaneFooter>
 

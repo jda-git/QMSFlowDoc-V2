@@ -118,13 +118,14 @@ public class ImprovementController : ControllerBase
                 a.Title,
                 a.ScheduledDate,
                 a.Status,
-                a.Findings.Count
+                a.Findings.Count,
+                a.ReportDocumentId
             ))
             .ToListAsync();
 
         return Ok(audits);
     }
-
+    
     [HttpGet("audits/{id}")]
     public async Task<ActionResult<AuditPlan>> GetAudit(Guid id)
     {
@@ -189,6 +190,17 @@ public class ImprovementController : ControllerBase
         return Ok(finding);
     }
 
+    [HttpDelete("audits/{id}")]
+    public async Task<IActionResult> DeleteAudit(Guid id)
+    {
+        var audit = await _context.AuditPlans.FindAsync(id);
+        if (audit == null) return NotFound();
+
+        _context.AuditPlans.Remove(audit);
+        await _context.SaveChangesAsync();
+        return NoContent();
+    }
+
     #endregion
 
     #region Management Reviews
@@ -201,7 +213,8 @@ public class ImprovementController : ControllerBase
             .Select(r => new ManagementReviewListDto(
                 r.Id,
                 r.ReviewDate,
-                r.Summary.Length > 100 ? r.Summary.Substring(0, 100) + "..." : r.Summary
+                r.Summary.Length > 100 ? r.Summary.Substring(0, 100) + "..." : r.Summary,
+                r.MinutesDocumentId
             ))
             .ToListAsync();
 
@@ -250,6 +263,17 @@ public class ImprovementController : ControllerBase
         review.Actions = request.Actions;
         if (request.MinutesDocumentId.HasValue) review.MinutesDocumentId = request.MinutesDocumentId;
 
+        await _context.SaveChangesAsync();
+        return NoContent();
+    }
+
+    [HttpDelete("reviews/{id}")]
+    public async Task<IActionResult> DeleteReview(Guid id)
+    {
+        var review = await _context.ManagementReviews.FindAsync(id);
+        if (review == null) return NotFound();
+
+        _context.ManagementReviews.Remove(review);
         await _context.SaveChangesAsync();
         return NoContent();
     }

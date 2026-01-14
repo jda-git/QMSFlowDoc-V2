@@ -44,14 +44,24 @@ public sealed partial class ReviewEditorView : Page
             try
             {
                 var docService = ((App)Application.Current).DocumentService;
+                
+                // Refresh connection status
+                await docService.InitializeAsync();
 
+                if (docService.IsLocalMode)
+                {
+                    FileNameText.Text = "Error: Modo Offline no permite vincular documentos a Revisión Online.";
+                    return;
+                }
+
+                // 1. Fetch Document Types
                 var typeList = await docService.GetDocumentTypesAsync();
                 var reportType = typeList.FirstOrDefault(t => t.Name == "Reporte") ?? typeList.FirstOrDefault();
                 
-                if (reportType == null) throw new Exception("No se encontraron tipos de documentos.");
+                if (reportType == null) throw new Exception("No se encontraron tipos de documentos configurados.");
 
                 // Lookup Folder
-                var folderId = await docService.GetOrCreateFolderIdAsync("AUDITORIA");
+                var folderId = await docService.GetOrCreateFolderIdAsync("AUDITORIA"); // Using same folder for now or change to REVIEWS if needed
 
                 var createReq = new CreateDocumentRequest(
                    DocCode: "REV-" + DateTime.Now.Ticks.ToString().Substring(10),
@@ -77,20 +87,26 @@ public sealed partial class ReviewEditorView : Page
                     {
                         _minutesDocumentId = doc.Id;
                         FileNameText.Text = file.Name;
+                        
+                        // Auto-save hint
+                        if (_reviewId.HasValue)
+                        {
+                             FileNameText.Text = $"{file.Name} (Vinculado - Recuerde Guardar)";
+                        }
                     }
                     else
                     {
-                        FileNameText.Text = "Error al subir contenido.";
+                        FileNameText.Text = "Error al subir contenido al servidor.";
                     }
                 }
                 else
                 {
-                    FileNameText.Text = "Error creando registro (Documento nulo).";
+                    FileNameText.Text = "Error: El servidor rechazó la creación del documento.";
                 }
             }
             catch (Exception ex)
             {
-                FileNameText.Text = "Error: " + ex.Message;
+                FileNameText.Text = "Error Crítico: " + ex.Message;
             }
         }
     }

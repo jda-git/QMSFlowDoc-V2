@@ -59,6 +59,7 @@ public sealed partial class ConfigurationView : Page
         var config = await app.NetworkConfigStore.LoadAsync();
         AutoSyncCheckBox.IsChecked = config.AutoSyncOnStartup;
         SyncIntervalSlider.Value = config.SyncIntervalMinutes;
+        InactivitySlider.Value = config.InactivityTimeoutMinutes > 0 ? config.InactivityTimeoutMinutes : 30;
     }
 
     // Reagent Types Management
@@ -167,6 +168,7 @@ public sealed partial class ConfigurationView : Page
             config.LocalBasePath = LocalPathBox.Text;
             config.AutoSyncOnStartup = AutoSyncCheckBox.IsChecked ?? true;
             config.SyncIntervalMinutes = (int)SyncIntervalSlider.Value;
+            config.InactivityTimeoutMinutes = (int)InactivitySlider.Value;
             
             await app.NetworkConfigStore.SaveAsync(config);
             
