@@ -58,25 +58,10 @@ public sealed partial class EquipmentView : Page
 
     private async void RegisterMaintenance_Click(object sender, RoutedEventArgs e)
     {
-        // Request admin password
-        var pwdDialog = new ContentDialog
+        // Check admin role instead of password
+        if (!_authService.IsAdmin)
         {
-            Title = "Clave de Administrador",
-            PrimaryButtonText = "Autorizar Registro/Edición",
-            CloseButtonText = "Cancelar",
-            DefaultButton = ContentDialogButton.Primary,
-            XamlRoot = this.XamlRoot
-        };
-
-        var pwdBox = new PasswordBox { Header = "Introduzca la clave para autorizar:", Width = 300 };
-        pwdDialog.Content = pwdBox;
-
-        if (await pwdDialog.ShowAsync() != ContentDialogResult.Primary || pwdBox.Password != "admin123")
-        {
-            if (pwdBox.Password != "admin123" && !string.IsNullOrEmpty(pwdBox.Password))
-            {
-                await ShowErrorDialog("Clave de administrador incorrecta.");
-            }
+            await ShowErrorDialog("Acceso denegado. Se requieren permisos de administrador.");
             return;
         }
 
@@ -263,37 +248,21 @@ public sealed partial class EquipmentView : Page
     {
         if (EquipmentList.SelectedItem is EquipmentListDto selected)
         {
-            // Request admin password
-            var pwdDialog = new ContentDialog
+            // Check admin role instead of password
+            if (!_authService.IsAdmin)
             {
-                Title = "Clave de Administrador",
-                PrimaryButtonText = "Autorizar Edición",
-                CloseButtonText = "Cancelar",
-                DefaultButton = ContentDialogButton.Primary,
-                XamlRoot = this.XamlRoot
-            };
-
-            var pwdBox = new PasswordBox { Header = "Introduzca la clave para autorizar:", Width = 300 };
-            pwdDialog.Content = pwdBox;
-
-            if (await pwdDialog.ShowAsync() == ContentDialogResult.Primary)
-            {
-                if (pwdBox.Password == "admin123")
-                {
-                    var userName = _authService.CurrentUsername ?? "Admin";
-                    await _auditLogger.LogEquipmentActionAsync(
-                        "Editar Equipo",
-                        selected.Name,
-                        $"ID: {selected.Id}",
-                        userName
-                    );
-                    Frame.Navigate(typeof(EquipmentEditorView), selected.Id);
-                }
-                else
-                {
-                    await ShowErrorDialog("Clave de administrador incorrecta.");
-                }
+                await ShowErrorDialog("Acceso denegado. Se requieren permisos de administrador.");
+                return;
             }
+
+            var userName = _authService.CurrentUsername ?? "Admin";
+            await _auditLogger.LogEquipmentActionAsync(
+                "Editar Equipo",
+                selected.Name,
+                $"ID: {selected.Id}",
+                userName
+            );
+            Frame.Navigate(typeof(EquipmentEditorView), selected.Id);
         }
     }
 
@@ -301,7 +270,14 @@ public sealed partial class EquipmentView : Page
     {
         if (EquipmentList.SelectedItem is EquipmentListDto selected)
         {
-            // 1. Confirm deletion
+            // Check admin role instead of password
+            if (!_authService.IsAdmin)
+            {
+                await ShowErrorDialog("Acceso denegado. Se requieren permisos de administrador.");
+                return;
+            }
+
+            // Confirm deletion
             var confirmMsg = $"¿Está seguro de eliminar el equipo '{selected.Name}' (Etiqueta: {selected.AssetTag})?\nEsta acción es permanente.";
             var confirmDialog = new ContentDialog
             {
@@ -315,45 +291,22 @@ public sealed partial class EquipmentView : Page
 
             if (await confirmDialog.ShowAsync() == ContentDialogResult.Primary)
             {
-                // 2. Request admin password
-                var pwdDialog = new ContentDialog
+                try
                 {
-                    Title = "Clave de Administrador",
-                    PrimaryButtonText = "Confirmar Borrado",
-                    CloseButtonText = "Cancelar",
-                    DefaultButton = ContentDialogButton.Primary,
-                    XamlRoot = this.XamlRoot
-                };
-
-                var pwdBox = new PasswordBox { Header = "Introduzca la clave para autorizar:", Width = 300 };
-                pwdDialog.Content = pwdBox;
-
-                if (await pwdDialog.ShowAsync() == ContentDialogResult.Primary)
+                    var userName = _authService.CurrentUsername ?? "Admin";
+                    await _equipmentService.DeleteEquipmentAsync(selected.Id);
+                    await _auditLogger.LogEquipmentActionAsync(
+                        "Eliminar Equipo",
+                        selected.Name,
+                        $"Etiqueta: {selected.AssetTag}",
+                        userName
+                    );
+                    await LoadEquipment();
+                    await ShowErrorDialog("Equipo eliminado correctamente.");
+                }
+                catch (Exception ex)
                 {
-                    if (pwdBox.Password == "admin123")
-                    {
-                        try
-                        {
-                            var userName = _authService.CurrentUsername ?? "Admin";
-                            await _equipmentService.DeleteEquipmentAsync(selected.Id);
-                            await _auditLogger.LogEquipmentActionAsync(
-                                "Eliminar Equipo",
-                                selected.Name,
-                                $"Etiqueta: {selected.AssetTag}",
-                                userName
-                            );
-                            await LoadEquipment();
-                            await ShowErrorDialog("Equipo eliminado correctamente.");
-                        }
-                        catch (Exception ex)
-                        {
-                            await ShowErrorDialog($"Error al eliminar: {ex.Message}");
-                        }
-                    }
-                    else
-                    {
-                        await ShowErrorDialog("Clave de administrador incorrecta.");
-                    }
+                    await ShowErrorDialog($"Error al eliminar: {ex.Message}");
                 }
             }
         }

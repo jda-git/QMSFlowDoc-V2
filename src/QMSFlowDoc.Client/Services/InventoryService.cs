@@ -17,7 +17,7 @@ public interface IInventoryService
     Task<bool> UpdateReagentStatusAsync(Guid id, int status);
     Task<List<ReagentLot>?> RegisterLotAsync(RegisterLotRequest request);
     Task<bool> AdjustStockAsync(AdjustStockRequest request);
-    Task<bool> DeleteReagentAsync(Guid id, string password);
+    Task<bool> DeleteReagentAsync(Guid id);
     Task<List<InventoryMovementDto>> GetMovementsAsync(DateTime? from, DateTime? to, InventoryMovementType? type, Guid? reagentId);
 }
 
@@ -69,9 +69,9 @@ public class InventoryService : IInventoryService
         return response.IsSuccessStatusCode ? await response.Content.ReadFromJsonAsync<List<ReagentLot>>() : null;
     }
 
-    public async Task<bool> DeleteReagentAsync(Guid id, string password)
+    public async Task<bool> DeleteReagentAsync(Guid id)
     {
-        var response = await _httpClient.DeleteAsync($"inventory/reagents/{id}?password={Uri.EscapeDataString(password)}");
+        var response = await _httpClient.DeleteAsync($"inventory/reagents/{id}");
         return response.IsSuccessStatusCode;
     }
 

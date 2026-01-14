@@ -18,6 +18,7 @@ namespace QMSFlowDoc.Client.Views;
 public sealed partial class InventoryView : Page
 {
     private readonly IInventoryService _inventoryService;
+    private readonly IAuthService _authService;
     private List<ReagentListDto> _allReagents = new();
     public ObservableCollection<ReagentListDto> Reagents { get; } = new();
 
@@ -25,6 +26,7 @@ public sealed partial class InventoryView : Page
     {
         this.InitializeComponent();
         _inventoryService = ((App)Application.Current).InventoryService;
+        _authService = ((App)Application.Current).AuthService;
     }
 
     protected override async void OnNavigatedTo(NavigationEventArgs e)
@@ -416,31 +418,14 @@ public sealed partial class InventoryView : Page
     {
         if (ReagentsList.SelectedItem is ReagentListDto reagent)
         {
-            // Ask for admin password before allowing edit
-            var pwdDialog = new ContentDialog
+            // Check admin role instead of password
+            if (!_authService.IsAdmin)
             {
-                Title = "Clave de Administrador",
-                PrimaryButtonText = "Autorizar Edición",
-                CloseButtonText = "Cancelar",
-                DefaultButton = ContentDialogButton.Primary,
-                XamlRoot = this.XamlRoot
-            };
-
-            var pwdBox = new PasswordBox { Header = "Introduzca la clave para autorizar:", Width = 300 };
-            pwdDialog.Content = pwdBox;
-
-            if (await pwdDialog.ShowAsync() == ContentDialogResult.Primary)
-            {
-                // Simple check: password is "admin123" (matches DbInitializer default)
-                if (pwdBox.Password == "admin123")
-                {
-                    Frame.Navigate(typeof(ReagentEditorView), reagent.Id);
-                }
-                else
-                {
-                    ShowError("Clave de administrador incorrecta.");
-                }
+                ShowError("Acceso denegado. Se requieren permisos de administrador.");
+                return;
             }
+
+            Frame.Navigate(typeof(ReagentEditorView), reagent.Id);
         }
     }
 
@@ -452,8 +437,15 @@ public sealed partial class InventoryView : Page
             return;
         }
 
-        // 1. Confirm deletion
-        var confirmMsg = $"¿Está seguro de eliminar {selected.Name} {selected.Fluorescence}?\nEsta acción borrará permanentemente el reactivo y todos sus lotes.";
+        // Check admin role instead of password
+        if (!_authService.IsAdmin)
+        {
+            ShowError("Acceso denegado. Se requieren permisos de administrador.");
+            return;
+        }
+
+        // Confirm deletion
+        var confirmMsg = $"¿Está seguro de eliminar {selected.Name} {selected.Fluorescence}?\nEsta acción marcará el reactivo como obsoleto.";
         var dialog = new ContentDialog
         {
             Title = "Confirmar eliminación",
@@ -466,31 +458,15 @@ public sealed partial class InventoryView : Page
 
         if (await dialog.ShowAsync() == ContentDialogResult.Primary)
         {
-            // 2. Ask for password
-            var pwdDialog = new ContentDialog
+            var success = await _inventoryService.DeleteReagentAsync(selected.Id);
+            if (success)
             {
-                Title = "Clave de Administrador",
-                PrimaryButtonText = "Confirmar Borrado",
-                CloseButtonText = "Cancelar",
-                DefaultButton = ContentDialogButton.Primary,
-                XamlRoot = this.XamlRoot
-            };
-
-            var pwdBox = new PasswordBox { Header = "Introduzca la clave para autorizar:", Width = 300 };
-            pwdDialog.Content = pwdBox;
-
-            if (await pwdDialog.ShowAsync() == ContentDialogResult.Primary)
+                await LoadReagents();
+                ShowError("Registro borrado correctamente.");
+            }
+            else
             {
-                var success = await _inventoryService.DeleteReagentAsync(selected.Id, pwdBox.Password);
-                if (success)
-                {
-                    await LoadReagents();
-                    ShowError("Registro borrado correctamente.");
-                }
-                else
-                {
-                    ShowError("Error al borrar. Verifique la clave de administrador.");
-                }
+                ShowError("Error al borrar el reactivo.");
             }
         }
     }
