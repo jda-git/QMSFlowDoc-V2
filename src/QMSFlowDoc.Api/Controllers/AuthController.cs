@@ -5,9 +5,9 @@ using Microsoft.IdentityModel.Tokens;
 using QMSFlowDoc.Api.Data;
 using QMSFlowDoc.Shared.DTOs;
 using QMSFlowDoc.Shared.Models;
+using QMSFlowDoc.Shared.Validation;
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
-using System.Security.Cryptography;
 using System.Text;
 
 namespace QMSFlowDoc.Api.Controllers;
@@ -39,6 +39,13 @@ public class AuthController : ControllerBase
             return BadRequest("El sistema ya ha sido inicializado.");
         }
 
+        // Validate password policy
+        var (isValid, errorMessage) = PasswordPolicy.Validate(request.Password);
+        if (!isValid)
+        {
+            return BadRequest(errorMessage);
+        }
+
         // Ensure roles exist
         if (!await _context.Roles.AnyAsync())
         {
@@ -61,10 +68,15 @@ public class AuthController : ControllerBase
             FullName = request.FullName,
             Email = request.Email,
             PasswordHash = HashPassword(request.Password),
+            PasswordChangedAt = DateTime.UtcNow,
             Roles = adminRole != null ? new List<Role> { adminRole } : new List<Role>()
         };
 
         _context.Users.Add(user);
+        
+        // Audit log for bootstrap
+        await LogAuditAsync(user.Id, "BOOTSTRAP", "User", user.Id, "Sistema inicializado con primer administrador", "OK");
+        
         await _context.SaveChangesAsync();
 
         return Ok(new { Message = "Administrador creado correctamente." });
@@ -73,25 +85,61 @@ public class AuthController : ControllerBase
     [HttpPost("login")]
     public async Task<ActionResult<LoginResponse>> Login(LoginRequest request)
     {
-        Console.WriteLine($"[*] Intento de login para: {request.Username}");
-        
         var user = await _context.Users
             .Include(u => u.Roles)
             .FirstOrDefaultAsync(u => u.Username == request.Username);
 
+        // User not found - don't reveal if user exists
         if (user == null)
         {
-            Console.WriteLine("[!] Usuario no encontrado.");
+            await LogAuditAsync(null, "LOGIN_FAIL", "Auth", null, $"Usuario no encontrado: {request.Username}", "FAIL");
             return Unauthorized("Usuario o contraseña incorrectos.");
         }
 
+        // Check if account is locked
+        if (user.LockedUntil.HasValue && user.LockedUntil.Value > DateTime.UtcNow)
+        {
+            var remainingMinutes = (int)(user.LockedUntil.Value - DateTime.UtcNow).TotalMinutes;
+            await LogAuditAsync(user.Id, "LOGIN_BLOCKED", "Auth", user.Id, $"Cuenta bloqueada. Intentar en {remainingMinutes} minutos.", "FAIL");
+            return Unauthorized($"Cuenta bloqueada. Intente de nuevo en {remainingMinutes} minutos.");
+        }
+
+        // Check if user is inactive
+        if (!user.IsActive)
+        {
+            await LogAuditAsync(user.Id, "LOGIN_INACTIVE", "Auth", user.Id, "Usuario desactivado intentó login", "FAIL");
+            return Unauthorized("Esta cuenta ha sido desactivada.");
+        }
+
+        // Verify password
         if (!VerifyPassword(request.Password, user.PasswordHash))
         {
-            Console.WriteLine("[!] Contraseña incorrecta (Hash mismatch).");
+            user.FailedLoginAttempts++;
+            
+            if (user.FailedLoginAttempts >= PasswordPolicy.MaxFailedAttempts)
+            {
+                user.LockedUntil = DateTime.UtcNow.AddMinutes(PasswordPolicy.LockoutMinutes);
+                await LogAuditAsync(user.Id, "ACCOUNT_LOCKED", "Auth", user.Id, 
+                    $"Cuenta bloqueada tras {PasswordPolicy.MaxFailedAttempts} intentos fallidos", "FAIL");
+            }
+            else
+            {
+                await LogAuditAsync(user.Id, "LOGIN_FAIL", "Auth", user.Id, 
+                    $"Contraseña incorrecta. Intento {user.FailedLoginAttempts}/{PasswordPolicy.MaxFailedAttempts}", "FAIL");
+            }
+            
+            await _context.SaveChangesAsync();
             return Unauthorized("Usuario o contraseña incorrectos.");
         }
 
-        Console.WriteLine("[+] Login exitoso.");
+        // Successful login - reset failed attempts
+        user.FailedLoginAttempts = 0;
+        user.LockedUntil = null;
+        user.LastLoginAt = DateTime.UtcNow;
+        
+        await LogAuditAsync(user.Id, "LOGIN_OK", "Auth", user.Id, "Login exitoso", "OK");
+        await _context.SaveChangesAsync();
+
         var token = GenerateJwtToken(user);
 
         return Ok(new LoginResponse(
@@ -102,9 +150,17 @@ public class AuthController : ControllerBase
         ));
     }
 
+    [Authorize]
     [HttpPost("register")]
     public async Task<ActionResult> Register(RegisterRequest request)
     {
+        // Validate password policy
+        var (isValid, errorMessage) = PasswordPolicy.Validate(request.Password);
+        if (!isValid)
+        {
+            return BadRequest(errorMessage);
+        }
+
         if (await _context.Users.AnyAsync(u => u.Username == request.Username))
         {
             return BadRequest("El nombre de usuario ya existe.");
@@ -113,11 +169,9 @@ public class AuthController : ControllerBase
         var role = await _context.Roles.FirstOrDefaultAsync(r => r.RoleName == request.RoleName);
         if (role == null)
         {
-            // If requested role doesn't exist, try to find a default or return error
             role = await _context.Roles.FirstOrDefaultAsync(r => r.RoleName == "Consultor");
             if (role == null)
             {
-                // Last resort: create it if it's a standard one or assign first available
                 role = await _context.Roles.FirstOrDefaultAsync();
             }
         }
@@ -129,16 +183,105 @@ public class AuthController : ControllerBase
             FullName = request.FullName,
             Email = request.Email,
             PasswordHash = HashPassword(request.Password),
+            PasswordChangedAt = DateTime.UtcNow,
             Roles = role != null ? new List<Role> { role } : new List<Role>()
         };
 
         _context.Users.Add(user);
+        
+        var currentUserId = GetCurrentUserId();
+        await LogAuditAsync(currentUserId, "USER_CREATED", "User", user.Id, 
+            $"Nuevo usuario creado: {request.Username} con rol {role?.RoleName ?? "ninguno"}", "OK");
+        
         await _context.SaveChangesAsync();
 
         return Ok(new { Id = user.Id, Username = user.Username });
     }
 
+    [Authorize(Roles = "Administrador")]
+    [HttpPost("reset-password/{userId}")]
+    public async Task<ActionResult> ResetPassword(Guid userId, [FromBody] ResetPasswordRequest request)
+    {
+        var user = await _context.Users.FindAsync(userId);
+        if (user == null) return NotFound("Usuario no encontrado.");
+
+        // Validate new password
+        var (isValid, errorMessage) = PasswordPolicy.Validate(request.NewPassword);
+        if (!isValid)
+        {
+            return BadRequest(errorMessage);
+        }
+
+        user.PasswordHash = HashPassword(request.NewPassword);
+        user.PasswordChangedAt = DateTime.UtcNow;
+        user.MustChangePassword = true; // Force change on next login
+        user.FailedLoginAttempts = 0;
+        user.LockedUntil = null;
+
+        var currentUserId = GetCurrentUserId();
+        await LogAuditAsync(currentUserId, "PASSWORD_RESET", "User", userId, 
+            $"Contraseña restablecida por administrador", "OK");
+
+        await _context.SaveChangesAsync();
+
+        return Ok(new { Message = "Contraseña restablecida correctamente." });
+    }
+
     [Authorize]
+    [HttpPost("change-password")]
+    public async Task<ActionResult> ChangePassword([FromBody] ChangePasswordRequest request)
+    {
+        var userId = GetCurrentUserId();
+        if (!userId.HasValue) return Unauthorized();
+
+        var user = await _context.Users.FindAsync(userId.Value);
+        if (user == null) return NotFound();
+
+        // Verify current password
+        if (!VerifyPassword(request.CurrentPassword, user.PasswordHash))
+        {
+            await LogAuditAsync(userId, "PASSWORD_CHANGE_FAIL", "User", userId, 
+                "Intento de cambio de contraseña con contraseña actual incorrecta", "FAIL");
+            return BadRequest("La contraseña actual es incorrecta.");
+        }
+
+        // Validate new password
+        var (isValid, errorMessage) = PasswordPolicy.Validate(request.NewPassword);
+        if (!isValid)
+        {
+            return BadRequest(errorMessage);
+        }
+
+        user.PasswordHash = HashPassword(request.NewPassword);
+        user.PasswordChangedAt = DateTime.UtcNow;
+        user.MustChangePassword = false;
+
+        await LogAuditAsync(userId, "PASSWORD_CHANGED", "User", userId, "Contraseña cambiada por el usuario", "OK");
+        await _context.SaveChangesAsync();
+
+        return Ok(new { Message = "Contraseña cambiada correctamente." });
+    }
+
+    [Authorize(Roles = "Administrador")]
+    [HttpPost("unlock/{userId}")]
+    public async Task<ActionResult> UnlockAccount(Guid userId)
+    {
+        var user = await _context.Users.FindAsync(userId);
+        if (user == null) return NotFound("Usuario no encontrado.");
+
+        user.FailedLoginAttempts = 0;
+        user.LockedUntil = null;
+
+        var currentUserId = GetCurrentUserId();
+        await LogAuditAsync(currentUserId, "ACCOUNT_UNLOCKED", "User", userId, 
+            "Cuenta desbloqueada por administrador", "OK");
+
+        await _context.SaveChangesAsync();
+
+        return Ok(new { Message = "Cuenta desbloqueada correctamente." });
+    }
+
+    [Authorize(Roles = "Administrador")]
     [HttpDelete("purge-users")]
     public async Task<ActionResult> PurgeUsers()
     {
@@ -152,6 +295,10 @@ public class AuthController : ControllerBase
         // Delete all users except 'admin'
         var nonAdminUsers = _context.Users.Where(u => u.Username != "admin");
         _context.Users.RemoveRange(nonAdminUsers);
+        
+        var currentUserId = GetCurrentUserId();
+        await LogAuditAsync(currentUserId, "PURGE_USERS", "User", null, 
+            "Todos los usuarios eliminados excepto admin", "OK");
         
         await _context.SaveChangesAsync();
         return Ok("Registros de personal y usuarios eliminados correctamente (excepto administrador).");
@@ -185,16 +332,53 @@ public class AuthController : ControllerBase
         return new JwtSecurityTokenHandler().WriteToken(token);
     }
 
-    // Simplistic hashing for MVP - use a proper library like BCrypt in production
+    // ISO 15189 compliant password hashing using BCrypt
     private string HashPassword(string password)
     {
-        using var sha256 = SHA256.Create();
-        var hashedBytes = sha256.ComputeHash(Encoding.UTF8.GetBytes(password));
-        return Convert.ToBase64String(hashedBytes);
+        return BCrypt.Net.BCrypt.HashPassword(password, workFactor: 12);
     }
 
     private bool VerifyPassword(string password, string hash)
     {
-        return HashPassword(password) == hash;
+        try
+        {
+            return BCrypt.Net.BCrypt.Verify(password, hash);
+        }
+        catch
+        {
+            // Fallback for legacy SHA256 hashes during migration
+            using var sha256 = System.Security.Cryptography.SHA256.Create();
+            var hashedBytes = sha256.ComputeHash(Encoding.UTF8.GetBytes(password));
+            var legacyHash = Convert.ToBase64String(hashedBytes);
+            return legacyHash == hash;
+        }
+    }
+
+    private Guid? GetCurrentUserId()
+    {
+        var userIdString = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        return userIdString != null ? Guid.Parse(userIdString) : null;
+    }
+
+    private async Task LogAuditAsync(Guid? userId, string action, string entityType, Guid? entityId, string details, string result)
+    {
+        var audit = new AuditLog
+        {
+            Id = Guid.NewGuid(),
+            Timestamp = DateTime.UtcNow,
+            UserId = userId,
+            UserName = User.Identity?.Name ?? "Sistema",
+            Action = action,
+            EntityType = entityType,
+            EntityId = entityId,
+            Details = details,
+            Result = result,
+            MachineName = Environment.MachineName
+        };
+        _context.AuditLogs.Add(audit);
     }
 }
+
+// DTOs for new endpoints
+public record ResetPasswordRequest(string NewPassword);
+public record ChangePasswordRequest(string CurrentPassword, string NewPassword);

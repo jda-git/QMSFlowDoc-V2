@@ -224,18 +224,30 @@ public class InventoryController : ControllerBase
         return Ok();
     }
 
+    [Authorize(Roles = "Administrador")]
     [HttpDelete("reagents/{id}")]
-    public async Task<IActionResult> DeleteReagent(Guid id, [FromQuery] string password)
+    public async Task<IActionResult> DeleteReagent(Guid id)
     {
-        // Simple Admin Password verification for MVP
-        // In a real app, this would check against the DB or an identity service.
-        // Based on DbInitializer, default admin is 'admin123'
-        if (password != "admin123") return Unauthorized("Clave de administrador incorrecta.");
-
         var reagent = await _context.Reagents.Include(r => r.Lots).FirstOrDefaultAsync(r => r.Id == id);
         if (reagent == null) return NotFound();
 
-        _context.Reagents.Remove(reagent);
+        // Soft-delete: Change status to OBSOLETO instead of physical delete
+        reagent.Status = ReagentStatus.OBSOLETO;
+        reagent.UpdatedAt = DateTime.UtcNow;
+        
+        // Audit log
+        var userId = User.FindFirstValue(System.Security.Claims.ClaimTypes.NameIdentifier);
+        _context.AuditLogs.Add(new QMSFlowDoc.Shared.Models.AuditLog
+        {
+            Action = "DELETE",
+            EntityType = "Reagent",
+            EntityId = id,
+            UserId = userId != null ? Guid.Parse(userId) : null,
+            UserName = User.Identity?.Name ?? "Unknown",
+            Details = $"Reactivo '{reagent.Name}' marcado como obsoleto",
+            Result = "OK"
+        });
+
         await _context.SaveChangesAsync();
 
         return Ok();

@@ -16,7 +16,9 @@ public interface IAuthService
     void Logout();
     string? CurrentToken { get; }
     string? CurrentUsername { get; }
+    List<string> CurrentRoles { get; }
     bool IsAuthenticated { get; }
+    bool IsAdmin { get; }
 }
 
 public class AuthService : IAuthService
@@ -24,7 +26,9 @@ public class AuthService : IAuthService
     private readonly HttpClient _httpClient;
     public string? CurrentToken { get; private set; }
     public string? CurrentUsername { get; private set; }
+    public List<string> CurrentRoles { get; private set; } = new();
     public bool IsAuthenticated => !string.IsNullOrEmpty(CurrentToken);
+    public bool IsAdmin => CurrentRoles.Contains("Administrador");
 
     public AuthService(HttpClient httpClient)
     {
@@ -43,6 +47,7 @@ public class AuthService : IAuthService
                 {
                     CurrentToken = result.Token;
                     CurrentUsername = username;
+                    CurrentRoles = result.Roles ?? new List<string>();
                     _httpClient.DefaultRequestHeaders.Authorization = 
                         new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", CurrentToken);
                     return true;

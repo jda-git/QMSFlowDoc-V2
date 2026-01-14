@@ -16,5 +16,6 @@ public class AuditLog
     public string? BeforeSnapshot { get; set; } // JSON
     public string? AfterSnapshot { get; set; } // JSON
     public string? IntegrityHash { get; set; } // SHA256 of event
+    public string? Result { get; set; } // OK/FAIL
     public string MachineName { get; set; } = Environment.MachineName;
 }

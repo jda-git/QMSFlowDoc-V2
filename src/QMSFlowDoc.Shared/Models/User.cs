@@ -12,6 +12,11 @@ public class User
     public DateTime? LastLoginAt { get; set; }
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
+    
+    // Security: Account lockout
+    public int FailedLoginAttempts { get; set; } = 0;
+    public DateTime? LockedUntil { get; set; }
+    public DateTime? PasswordChangedAt { get; set; }
 
     public List<Role> Roles { get; set; } = new();
 }

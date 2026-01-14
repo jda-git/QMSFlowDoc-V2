@@ -428,24 +428,23 @@ public sealed partial class DocumentsView : Page
 
     private async Task<bool> CheckAdminPermission()
     {
-        var input = new PasswordBox { Header = "Contraseña de Administrador", Margin = new Thickness(0, 16, 0, 0) };
-        var dialog = new ContentDialog
+        var app = (App)Application.Current;
+        
+        // Check role from JWT token instead of hardcoded password
+        if (app.AuthService.IsAdmin)
         {
-            Title = "Permiso de Administrador Requerido",
-            Content = input,
-            PrimaryButtonText = "Verificar",
-            CloseButtonText = "Cancelar",
-            XamlRoot = this.XamlRoot
-        };
-
-        if (await dialog.ShowAsync() == ContentDialogResult.Primary)
-        {
-            // Hardcoded "admin" for now, ideally check against backend or config
-            if (input.Password == "admin123") return true; // Fixed password per user feedback
-            
-            var err = new ContentDialog { Title = "Error", Content = "Contraseña incorrecta.", CloseButtonText = "OK", XamlRoot = this.XamlRoot };
-            await err.ShowAsync();
+            return true;
         }
+        
+        var err = new ContentDialog 
+        { 
+            Title = "Acceso Denegado", 
+            Content = "Esta acción requiere permisos de Administrador. Su cuenta actual es de tipo: " + 
+                      string.Join(", ", app.AuthService.CurrentRoles.Count > 0 ? app.AuthService.CurrentRoles : new List<string> { "Sin rol" }),
+            CloseButtonText = "OK", 
+            XamlRoot = this.XamlRoot 
+        };
+        await err.ShowAsync();
         return false;
     }
 
