@@ -91,6 +91,8 @@ public sealed partial class EquipmentEditorView : Page
                     ManufacturerBox.Text,
                     ModelBox.Text,
                     SerialBox.Text,
+                    null, // SoftwareVersion
+                    null, // FirmwareVersion
                     LocationBox.Text,
                     InstallationDatePicker.Date.UtcDateTime
                 );
@@ -105,6 +107,8 @@ public sealed partial class EquipmentEditorView : Page
                     ManufacturerBox.Text,
                     ModelBox.Text,
                     SerialBox.Text,
+                    null, // SoftwareVersion
+                    null, // FirmwareVersion
                     LocationBox.Text,
                     InstallationDatePicker.Date.UtcDateTime
                 );

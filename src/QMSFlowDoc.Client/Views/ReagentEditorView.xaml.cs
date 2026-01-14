@@ -123,12 +123,13 @@ public sealed partial class ReagentEditorView : Page
                 FluorescenceBox.Text,
                 type,
                 ReferenceBox.Text ?? "Unidad",
+                null, // Classification (ISO 15189)
                 null, // StorageConditions
                 null, // DefaultLocationId
                 null, // OpenShelfLifeDays
                 (decimal)MinStockBox.Value,
                 (decimal)TargetStockBox.Value,
-                (decimal)TargetStockBox.Value // Reorder Qty = Target by default
+                (decimal)TargetStockBox.Value // ReorderQty = Target by default
             );
 
             var service = ((App)Application.Current).InventoryService;

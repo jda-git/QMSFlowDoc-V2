@@ -96,7 +96,9 @@ public sealed partial class NCEditorView : Page
                 severity,
                 status,
                 ImpactPatientCheck.IsChecked ?? false,
-                ContainmentBox.Text
+                ContainmentBox.Text,
+                null, // Origin (ISO 15189)
+                null  // RootCauseAnalysis (ISO 15189)
             );
 
             var service = ((App)Application.Current).QualityService;

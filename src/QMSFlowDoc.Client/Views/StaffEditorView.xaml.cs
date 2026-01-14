@@ -82,7 +82,7 @@ public sealed partial class StaffEditorView : Page
                     t.TrainingActivityId,
                     t.TrainingActivity?.Title ?? "Desconocido",
                     t.TrainingActivity?.Provider ?? "",
-                    t.CompletedAt ?? DateTime.MinValue,
+                    t.CompletionDate ?? DateTime.MinValue,
                     t.TrainingActivity?.Hours ?? 0m,
                     t.Result ?? ""
                 )).ToList();
