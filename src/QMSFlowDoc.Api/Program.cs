@@ -22,6 +22,10 @@ var connectionString = builder.Configuration.GetConnectionString("DefaultConnect
 builder.Services.AddDbContext<ApplicationDbContext>(options =>
     options.UseNpgsql(connectionString));
 
+// Register HttpContextAccessor and AuditService for ISO 15189 compliance
+builder.Services.AddHttpContextAccessor();
+builder.Services.AddScoped<QMSFlowDoc.Api.Services.IAuditService, QMSFlowDoc.Api.Services.AuditService>();
+
 // Configure Authentication
 var jwtKey = builder.Configuration["Jwt:Key"] ?? throw new InvalidOperationException("JWT Key is missing");
 var jwtIssuer = builder.Configuration["Jwt:Issuer"];
