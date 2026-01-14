@@ -18,6 +18,8 @@ public interface IEquipmentService
     Task<MaintenanceEvent?> RegisterMaintenanceAsync(RegisterMaintenanceRequest request);
     Task<MaintenanceEvent?> UpdateMaintenanceAsync(UpdateMaintenanceRequest request);
     Task<bool> DeleteEquipmentAsync(Guid id);
+    Task<bool> RegisterDailyQCAsync(CreateDailyQCRequest request);
+    Task<IEnumerable<EquipmentDailyQCDto>> GetDailyQCAsync(Guid equipmentId);
 }
 
 public class EquipmentService : IEquipmentService
@@ -83,5 +85,17 @@ public class EquipmentService : IEquipmentService
     {
         var response = await _httpClient.DeleteAsync($"equipment/{id}");
         return response.IsSuccessStatusCode;
+    }
+
+    public async Task<bool> RegisterDailyQCAsync(CreateDailyQCRequest request)
+    {
+        var response = await _httpClient.PostAsJsonAsync("equipment/qc", request);
+        return response.IsSuccessStatusCode;
+    }
+
+    public async Task<IEnumerable<EquipmentDailyQCDto>> GetDailyQCAsync(Guid equipmentId)
+    {
+        return await _httpClient.GetFromJsonAsync<IEnumerable<EquipmentDailyQCDto>>($"equipment/{equipmentId}/qc")
+               ?? new List<EquipmentDailyQCDto>();
     }
 }

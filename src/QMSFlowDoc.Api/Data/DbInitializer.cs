@@ -256,6 +256,20 @@ public static class DbInitializer
                         PRIMARY KEY (""AuthorizationId"", ""CompetencyId"")
                     );");
 
+                await context.Database.ExecuteSqlRawAsync(@"
+                    CREATE TABLE IF NOT EXISTS ""EquipmentDailyQCs"" (
+                        ""Id"" uuid NOT NULL PRIMARY KEY,
+                        ""EquipmentId"" uuid NOT NULL,
+                        ""LotNumber"" text NOT NULL,
+                        ""IsPass"" boolean NOT NULL,
+                        ""Notes"" text,
+                        ""PerformedByUserId"" uuid NOT NULL,
+                        ""PerformedAt"" timestamp with time zone NOT NULL,
+                        ""EquipmentId1"" uuid -- Shadow property might be created by EF if logic differs, but explicit FK is better. 
+                                              -- Use simple structure. EF Core usually handles FKs if created by EnsureCreated, 
+                                              -- but for manual update we minimally need columns.
+                    );");
+
                 // Ensure columns exist in tables that might have been created without them
                 await context.Database.ExecuteSqlRawAsync(@"
                     DO $$ 
@@ -423,11 +437,62 @@ public static class DbInitializer
             Console.WriteLine($"DB Schema update warning: {ex.Message}");
         }
 
+        // Check if Roles table is empty or missing specific roles
+        if (!await context.Roles.AnyAsync())
+        {
+            var adminRole = new Role { Id = Guid.NewGuid(), RoleName = "Administrador", Description = "Acceso total al sistema" };
+            var consultRole = new Role { Id = Guid.NewGuid(), RoleName = "Consultor", Description = "Acceso de consulta y lectura" };
+            var managerRole = new Role { Id = Guid.NewGuid(), RoleName = "Manager", Description = "Management and oversight" };
+            var qualityRole = new Role { Id = Guid.NewGuid(), RoleName = "Quality", Description = "Quality assurance and audits" };
+            var staffRole = new Role { Id = Guid.NewGuid(), RoleName = "Staff", Description = "Basic documentation access" };
+
+            context.Roles.AddRange(adminRole, consultRole, managerRole, qualityRole, staffRole);
+            await context.SaveChangesAsync();
+        }
+        else 
+        {
+            // Ensure specific roles exist (for migrations)
+            var roleNames = new[] { "Administrador", "Consultor", "Manager", "Quality", "Staff" };
+            foreach (var name in roleNames)
+            {
+                if (!await context.Roles.AnyAsync(r => r.RoleName == name))
+                {
+                    context.Roles.Add(new Role { Id = Guid.NewGuid(), RoleName = name, Description = $"Role {name}" });
+                }
+            }
+            if (context.ChangeTracker.HasChanges())
+            {
+                await context.SaveChangesAsync();
+            }
+        }
+
         if (await context.Users.AnyAsync())
         {
+            // Seed ISO 15189 Modules even if users exist
+            await SeedISO15189(context);
             return; 
         }
 
+        // Create Admin User only if no users exist
+        var adminRoleRef = await context.Roles.FirstAsync(r => r.RoleName == "Administrador");
+        var adminUser = new User
+        {
+            Id = Guid.NewGuid(),
+            Username = "admin",
+            FullName = "System Administrator",
+            Email = "admin@qmsflowdoc.local",
+            PasswordHash = HashPassword("admin123"),
+            Roles = new List<Role> { adminRoleRef }
+        };
+
+        context.Users.Add(adminUser);
+        await context.SaveChangesAsync();
+        
+        await SeedISO15189(context);
+    }
+
+    private static async Task SeedISO15189(ApplicationDbContext context)
+    {
         // Create Document Types
         if (!await context.DocumentTypes.AnyAsync())
         {
@@ -459,28 +524,8 @@ public static class DbInitializer
             await context.SaveChangesAsync();
         }
 
-        // Create Roles
-        var adminRole = new Role { Id = Guid.NewGuid(), RoleName = "Administrador", Description = "Acceso total al sistema" };
-        var consultRole = new Role { Id = Guid.NewGuid(), RoleName = "Consultor", Description = "Acceso de consulta y lectura" };
-        var managerRole = new Role { Id = Guid.NewGuid(), RoleName = "Manager", Description = "Management and oversight" };
-        var qualityRole = new Role { Id = Guid.NewGuid(), RoleName = "Quality", Description = "Quality assurance and audits" };
-        var staffRole = new Role { Id = Guid.NewGuid(), RoleName = "Staff", Description = "Basic documentation access" };
-
-        context.Roles.AddRange(adminRole, consultRole, managerRole, qualityRole, staffRole);
-
-        // Create Admin User
-        var adminUser = new User
-        {
-            Id = Guid.NewGuid(),
-            Username = "admin",
-            FullName = "System Administrator",
-            Email = "admin@qmsflowdoc.local",
-            PasswordHash = HashPassword("admin123"),
-            Roles = new List<Role> { adminRole }
-        };
-
-        context.Users.Add(adminUser);
-        await context.SaveChangesAsync();
+        var adminUser = await context.Users.FirstOrDefaultAsync(u => u.Username == "admin");
+        var adminUserId = adminUser?.Id ?? Guid.Empty;
 
         // Seed ISO 15189 Modules
         if (!await context.CompetencyCatalogs.AnyAsync())

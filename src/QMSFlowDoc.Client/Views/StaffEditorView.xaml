@@ -33,6 +33,7 @@
                             <TextBox x:Name="EmailBox" Header="Correo Electrónico" PlaceholderText="juan@ejemplo.com" Grid.Row="1" Grid.Column="0" />
                             <TextBox x:Name="UsernameBox" Header="Nombre de Usuario (Login)" PlaceholderText="jperez" Grid.Row="1" Grid.Column="1" />
                             <PasswordBox x:Name="PasswordBox" Header="Contraseña (Requerida solo para altas)" Grid.Row="2" Grid.Column="0" />
+                            <Button x:Name="ResetPasswordButton" Content="Restablecer Contraseña (Admin)" Click="ResetPassword_Click" Grid.Row="2" Grid.Column="1" VerticalAlignment="Bottom" HorizontalAlignment="Stretch" Visibility="Collapsed" Background="#FFDDDD" Foreground="Red" BorderBrush="Red" />
                         </Grid>
              
                         <TextBlock Text="Datos Profesionales" Style="{StaticResource SubtitleTextBlockStyle}" Margin="0,12,0,0" />
@@ -42,7 +43,10 @@
                             <DatePicker x:Name="HiredDatePicker" Header="Fecha de Contratación" Grid.Row="1" Grid.Column="0" />
                             <ComboBox x:Name="RoleCombo" Header="Permisos" Grid.Row="1" Grid.Column="1" HorizontalAlignment="Stretch">
                                 <ComboBoxItem Content="Administrador" Tag="Administrador" />
+                                <ComboBoxItem Content="Manager" Tag="Manager" />
+                                <ComboBoxItem Content="Quality" Tag="Quality" />
                                 <ComboBoxItem Content="Consultor" Tag="Consultor" />
+                                <ComboBoxItem Content="Staff" Tag="Staff" />
                             </ComboBox>
                             <CheckBox x:Name="IsActiveCheck" Content="Ficha Activa" IsChecked="True" Grid.Row="2" Grid.Column="0" />
                         </Grid>
@@ -71,6 +75,12 @@
                             <StackPanel Orientation="Horizontal" Spacing="8">
                                 <FontIcon Glyph="&#xE710;" FontSize="16"/>
                                 <TextBlock Text="Registrar Actividad" VerticalAlignment="Center"/>
+                            </StackPanel>
+                        </Button>
+                        <Button Click="PrintTrainingPlan_Click">
+                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                <FontIcon Glyph="&#xE749;" FontSize="16"/>
+                                <TextBlock Text="Imprimir Plan de Formación" VerticalAlignment="Center"/>
                             </StackPanel>
                         </Button>
                         <TextBlock Text="Historial de Capacitación" Style="{StaticResource SubtitleTextBlockStyle}" VerticalAlignment="Center" Margin="12,0,0,0"/>

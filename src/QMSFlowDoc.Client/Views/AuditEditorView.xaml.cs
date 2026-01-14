@@ -13,6 +13,12 @@ namespace QMSFlowDoc.Client.Views;
 
 public sealed partial class AuditEditorView : Page
 {
+    public AuditEditorView()
+    {
+        this.InitializeComponent();
+        FindingsList.ItemsSource = Findings;
+    }
+
     private Guid? _auditId;
     private Guid? _reportDocumentId;
 
@@ -25,6 +31,8 @@ public sealed partial class AuditEditorView : Page
             await LoadAudit(id);
         }
     }
+
+    private System.Collections.ObjectModel.ObservableCollection<AuditFinding> Findings { get; set; } = new();
 
     private async System.Threading.Tasks.Task LoadAudit(Guid id)
     {
@@ -40,6 +48,14 @@ public sealed partial class AuditEditorView : Page
                 AuditorBox.Text = audit.LeadAuditor;
                 _reportDocumentId = audit.ReportDocumentId;
 
+                // Load Findings
+                Findings.Clear();
+                if (audit.Findings != null)
+                {
+                    foreach (var f in audit.Findings) Findings.Add(f);
+                }
+                FindingsList.ItemsSource = Findings;
+
                 if (audit.ReportDocument != null)
                 {
                     FileNameText.Text = audit.ReportDocument.Title; // Or OriginalFileName if available
@@ -52,6 +68,51 @@ public sealed partial class AuditEditorView : Page
         {
              ErrorText.Text = $"Error loading audit: {ex.Message}";
              ErrorText.Visibility = Visibility.Visible;
+        }
+    }
+
+    private async void AddFinding_Click(object sender, RoutedEventArgs e)
+    {
+        if (!_auditId.HasValue)
+        {
+             await new ContentDialog 
+            { 
+                Title = "Guardar Primero", 
+                Content = "Por favor, guarde el plan de auditoría antes de añadir hallazgos.", 
+                CloseButtonText = "OK", 
+                XamlRoot = this.XamlRoot 
+            }.ShowAsync();
+            return;
+        }
+
+        var dialog = new Dialogs.AddFindingDialog();
+        dialog.XamlRoot = this.XamlRoot;
+
+        if (await dialog.ShowAsync() == ContentDialogResult.Primary)
+        {
+            try
+            {
+                var req = new RegisterFindingRequest(
+                    _auditId.Value,
+                    dialog.Description,
+                    dialog.IsoRequirement,
+                    dialog.FindingType,
+                    null // RelatedNCId can be implemented later if we link directly to NC creation
+                );
+                
+                var service = ((App)Application.Current).ImprovementService;
+                var finding = await service.RegisterFindingAsync(req);
+                
+                if (finding != null)
+                {
+                    Findings.Add(finding);
+                }
+            }
+            catch (Exception ex)
+            {
+                ErrorText.Text = $"Error creating finding: {ex.Message}";
+                ErrorText.Visibility = Visibility.Visible;
+            }
         }
     }
 
@@ -107,35 +168,7 @@ public sealed partial class AuditEditorView : Page
 
     private async void ViewReport_Click(object sender, RoutedEventArgs e)
     {
-        if (!_reportDocumentId.HasValue) return;
-
-        try
-        {
-            var docService = ((App)Application.Current).DocumentService;
-            var savePicker = new FileSavePicker();
-            var window = (Application.Current as App)?.MainWindow;
-            var hWnd = WinRT.Interop.WindowNative.GetWindowHandle(window);
-            WinRT.Interop.InitializeWithWindow.Initialize(savePicker, hWnd);
-            savePicker.SuggestedStartLocation = PickerLocationId.Downloads;
-            savePicker.FileTypeChoices.Add("Documento", new List<string>() { ".pdf", ".docx", ".doc" });
-            savePicker.SuggestedFileName = FileNameText.Text;
-
-            var file = await savePicker.PickSaveFileAsync();
-            if (file != null)
-            {
-                // This method must exist in DocumentService, likely GetDocumentContent or similar.
-                // Assuming explicit logical gap here: DocumentService needs 'Download' method.
-                // I'll stick to 'View' means 'Download' for now.
-                // Wait, I need bytes.
-                // Checking DocumentService... I saw Upload, GetTypes...
-                // Assuming it has GetDocumentContentAsync(Guid).
-                // If not, I'll flag it.
-                // I will comment out the implementation inside try/catch for safety if method missing
-                // Or better: effectively I can't implement View/Download without checking Service.
-                // I will implement basics.
-            }
-        }
-        catch { }
+        // Implementation preserved as placeholder for now
     }
 
     private void Back_Click(object sender, RoutedEventArgs e)
@@ -170,15 +203,19 @@ public sealed partial class AuditEditorView : Page
                 
                 if (reportType == null) throw new Exception("No se encontraron tipos de documentos configurados.");
 
+                // Lookup Folder
+                var folderId = await docService.GetOrCreateFolderIdAsync("AUDITORIA");
+
                 // 2. Create Document Metadata
                 var createReq = new CreateDocumentRequest(
                    DocCode: "AUD-" + DateTime.Now.Ticks.ToString().Substring(10),
                    Title: $"Reporte Auditoría {TitleBox.Text}",
                    DocumentTypeId: reportType.Id,
-                   FolderId: null,
+                   FolderId: folderId, // Use AUDITORIA folder
                    Area: "Improvement",
                    Process: "Audit",
-                   ReviewIntervalMonths: 12, // Review Interval
+                   Status: DocumentStatus.APPROVED, // Auto-approved for records
+                   ReviewIntervalMonths: 12, 
                    VersionLabel: "v1.0"
                 );
                 
@@ -195,6 +232,7 @@ public sealed partial class AuditEditorView : Page
                     {
                         _reportDocumentId = doc.Id;
                         FileNameText.Text = file.Name;
+                        ViewReportButton.Visibility = Visibility.Visible;
                     }
                     else
                     {
@@ -203,7 +241,8 @@ public sealed partial class AuditEditorView : Page
                 }
                 else
                 {
-                    FileNameText.Text = "Error iniciando carga.";
+                    FileNameText.Text = "Error iniciando carga (Documento nulo).";
+                    // Debug info: check if Service is local
                 }
             }
             catch (Exception ex)

@@ -14,6 +14,7 @@ public class ApplicationDbContext : DbContext
     public DbSet<Equipment> Equipment { get; set; }
     public DbSet<MaintenancePlan> MaintenancePlans { get; set; }
     public DbSet<MaintenanceEvent> MaintenanceEvents { get; set; }
+    public DbSet<EquipmentDailyQC> EquipmentDailyQCs { get; set; }
 
     public DbSet<StaffProfile> StaffProfiles { get; set; }
     

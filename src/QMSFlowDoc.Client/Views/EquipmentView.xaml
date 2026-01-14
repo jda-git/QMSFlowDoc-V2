@@ -16,6 +16,7 @@
             <Button x:Name="EditEquipmentButton" Content="Editar Equipo" Click="EditEquipment_Click" IsEnabled="False" />
             <Button x:Name="DeleteEquipmentButton" Content="Eliminar Equipo" Click="DeleteEquipment_Click" IsEnabled="False" Foreground="Red" />
             <Button Content="Registrar Mantenimiento" Click="RegisterMaintenance_Click" />
+            <Button Content="Registrar QC Diario" Click="RegisterQC_Click" Style="{StaticResource AccentButtonStyle}" />
         </StackPanel>
 
         <ListView Grid.Row="1" x:Name="EquipmentList"
@@ -36,6 +37,7 @@
                             <ColumnDefinition Width="80" />
                             <ColumnDefinition Width="120" />
                             <ColumnDefinition Width="80" />
+                            <ColumnDefinition Width="80" />
                         </Grid.ColumnDefinitions>
                         <Button Content="Etiqueta" Click="Sort_AssetTag_Click" Style="{StaticResource TextBlockButtonStyle}" FontWeight="Bold" Grid.Column="0" />
                         <Button Content="Nombre" Click="Sort_Name_Click" Style="{StaticResource TextBlockButtonStyle}" FontWeight="Bold" Grid.Column="1" />
@@ -46,6 +48,7 @@
                         <TextBlock Text="Resultado" FontWeight="Bold" Grid.Column="6" VerticalAlignment="Center" Margin="12,0,0,0" />
                         <TextBlock Text="Próx. Mant." FontWeight="Bold" Grid.Column="7" VerticalAlignment="Center" Margin="12,0,0,0" />
                         <TextBlock Text="Estado" FontWeight="Bold" Grid.Column="8" VerticalAlignment="Center" Margin="12,0,0,0" />
+                        <TextBlock Text="QC Hoy" FontWeight="Bold" Grid.Column="9" VerticalAlignment="Center" Margin="12,0,0,0" />
                     </Grid>
                 </DataTemplate>
             </ListView.HeaderTemplate>
@@ -62,6 +65,7 @@
                             <ColumnDefinition Width="80" />
                             <ColumnDefinition Width="120" />
                             <ColumnDefinition Width="80" />
+                            <ColumnDefinition Width="80" />
                         </Grid.ColumnDefinitions>
                         <TextBlock Text="{x:Bind AssetTag}" Grid.Column="0" />
                         <TextBlock Text="{x:Bind Name}" Grid.Column="1" />
@@ -72,6 +76,8 @@
                         <TextBlock Text="{x:Bind LastOutcome, FallbackValue='-'}" Grid.Column="6" />
                         <TextBlock Text="{x:Bind NextMaintenanceDue, FallbackValue='-'}" Grid.Column="7" Foreground="Orange" FontWeight="SemiBold" />
                         <TextBlock Text="{x:Bind StatusFormatted}" Grid.Column="8" />
+                        <TextBlock Text="{x:Bind TodayQCStatus}" Grid.Column="9" FontWeight="Bold" 
+                                   Foreground="{x:Bind TodayQCColor, Mode=OneWay}" />
                     </Grid>
                 </DataTemplate>
             </ListView.ItemTemplate>

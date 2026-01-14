@@ -3,7 +3,9 @@ using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Navigation;
 using QMSFlowDoc.Shared.DTOs;
 using QMSFlowDoc.Shared.Models;
+using System.Collections.Generic;
 using System;
+using System.Linq;
 
 namespace QMSFlowDoc.Client.Views;
 
@@ -26,6 +28,8 @@ public sealed partial class NCEditorView : Page
         }
     }
 
+    private System.Collections.ObjectModel.ObservableCollection<CapaAction> Actions { get; set; } = new();
+
     private async System.Threading.Tasks.Task LoadNC(Guid id)
     {
         try
@@ -37,7 +41,17 @@ public sealed partial class NCEditorView : Page
                 TitleBox.Text = nc.Title;
                 DescriptionBox.Text = nc.Description;
                 ContainmentBox.Text = nc.Containment;
+                RcaBox.Text = nc.RootCauseAnalysis;
+                OriginCombo.Text = nc.Origin; // Simple text binding for editable combo
                 ImpactPatientCheck.IsChecked = nc.ImpactPatient;
+
+                // Load Actions
+                Actions.Clear();
+                if (nc.Actions != null)
+                {
+                    foreach (var action in nc.Actions) Actions.Add(action);
+                }
+                ActionsList.ItemsSource = Actions; // Bind manually or via property
 
                 // Select Severity
                 foreach (ComboBoxItem item in SeverityCombo.Items)
@@ -97,8 +111,8 @@ public sealed partial class NCEditorView : Page
                 status,
                 ImpactPatientCheck.IsChecked ?? false,
                 ContainmentBox.Text,
-                null, // Origin (ISO 15189)
-                null  // RootCauseAnalysis (ISO 15189)
+                OriginCombo.Text, // ISO 15189
+                RcaBox.Text  // ISO 15189
             );
 
             var service = ((App)Application.Current).QualityService;
@@ -108,8 +122,12 @@ public sealed partial class NCEditorView : Page
                 // Update
                 var success = await service.UpdateNCAsync(_ncId.Value, request);
                 
-                // Update Status
-                statusStr = (StatusCombo.SelectedItem as ComboBoxItem)?.Content?.ToString();
+                 // Update Status separate patch if needed, or included in PUT. 
+                 // Assuming PUT handles all fields now based on CreateNCRequest usage in controller.
+                 // Double check controller UpdateNC logic - it updates specific fields.
+                 
+                 // Update Status specifically via PATCH if key logic depends on it, but UpdateNC also sets it potentially?
+                 // Let's stick to existing pattern: Update fields, then Update Status status.
                 if (Enum.TryParse<NCStatus>(statusStr, out var statusEnum))
                 {
                     await service.UpdateNCStatusAsync(_ncId.Value, (int)statusEnum);
@@ -137,6 +155,56 @@ public sealed partial class NCEditorView : Page
         {
             ErrorText.Text = $"Error: {ex.Message}";
             ErrorText.Visibility = Visibility.Visible;
+        }
+    }
+
+    private async void AddAction_Click(object sender, RoutedEventArgs e)
+    {
+        if (!_ncId.HasValue)
+        {
+            await new ContentDialog 
+            { 
+                Title = "Guardar Primero", 
+                Content = "Por favor, guarde la No Conformidad antes de añadir acciones.", 
+                CloseButtonText = "OK", 
+                XamlRoot = this.XamlRoot 
+            }.ShowAsync();
+            return;
+        }
+
+        var staffService = ((App)Application.Current).StaffService;
+        var users = (await staffService.GetStaffAsync()) // Fixed method name
+                        .Select(s => new User { Id = s.UserId ?? Guid.Empty, FullName = s.FullName })
+                        .ToList();
+
+        var dialog = new Dialogs.AddCapaDialog(users ?? new System.Collections.Generic.List<User>()); // Explicit or add using
+        dialog.XamlRoot = this.XamlRoot;
+
+        if (await dialog.ShowAsync() == ContentDialogResult.Primary)
+        {
+            try 
+            {
+                var req = new CreateCAPARequest(
+                    _ncId.Value,
+                    dialog.ActionType,
+                    dialog.ActionDescription,
+                    dialog.OwnerUserId,
+                    dialog.DueDate
+                );
+
+                var service = ((App)Application.Current).QualityService;
+                var action = await service.CreateCAPAAsync(req);
+
+                if (action != null)
+                {
+                    Actions.Add(action);
+                }
+            }
+            catch (Exception ex)
+            {
+                ErrorText.Text = $"Error creating CAPA: {ex.Message}";
+                ErrorText.Visibility = Visibility.Visible;
+            }
         }
     }
 }

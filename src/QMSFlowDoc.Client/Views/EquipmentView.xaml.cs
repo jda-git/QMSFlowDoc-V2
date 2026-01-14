@@ -237,6 +237,50 @@ public sealed partial class EquipmentView : Page
     }
 
 
+    private async void RegisterQC_Click(object sender, RoutedEventArgs e)
+    {
+        if (EquipmentList.SelectedItem is EquipmentListDto selected)
+        {
+             var dialog = new Dialogs.AddDailyQCDialog
+             {
+                 XamlRoot = this.XamlRoot,
+                 Title = $"Registrar QC: {selected.Name}"
+             };
+
+             if (await dialog.ShowAsync() == ContentDialogResult.Primary)
+             {
+                 try
+                 {
+                     var req = new CreateDailyQCRequest(
+                        selected.Id,
+                        dialog.LotNumber,
+                        dialog.IsPass,
+                        dialog.Notes,
+                        dialog.PerformedAt
+                     );
+
+                     var success = await _equipmentService.RegisterDailyQCAsync(req);
+                     if (success)
+                     {
+                         await LoadEquipment(); // Refresh to update column
+                     }
+                     else
+                     {
+                         await ShowErrorDialog("Error al registrar QC.");
+                     }
+                 }
+                 catch (Exception ex)
+                 {
+                     await ShowErrorDialog($"Error: {ex.Message}");
+                 }
+             }
+        }
+        else
+        {
+            await ShowErrorDialog("Por favor, seleccione un equipo de la lista para registrar el QC.");
+        }
+    }
+
     private void EquipmentList_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
         var isSelected = EquipmentList.SelectedItem != null;

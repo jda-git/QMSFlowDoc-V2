@@ -12,6 +12,9 @@ public interface IAuthService
     Task<bool> LoginAsync(string username, string password);
     Task<Guid?> RegisterAsync(RegisterRequest request);
     Task PurgeUsersAsync();
+    Task<bool> ChangePasswordAsync(ChangePasswordRequest request);
+    Task<bool> ResetPasswordAsync(Guid userId, ResetPasswordRequest request);
+    Task<bool> UnlockAccountAsync(Guid userId);
     Task<bool> NeedsBootstrapAsync();
     Task<bool> BootstrapAsync(RegisterRequest request);
     void Logout();
@@ -93,6 +96,24 @@ public class AuthService : IAuthService
     {
         var response = await _httpClient.DeleteAsync("auth/purge-users");
         response.EnsureSuccessStatusCode();
+    }
+
+    public async Task<bool> ChangePasswordAsync(ChangePasswordRequest request)
+    {
+        var response = await _httpClient.PostAsJsonAsync("auth/change-password", request);
+        return response.IsSuccessStatusCode;
+    }
+
+    public async Task<bool> ResetPasswordAsync(Guid userId, ResetPasswordRequest request)
+    {
+        var response = await _httpClient.PostAsJsonAsync($"auth/reset-password/{userId}", request);
+        return response.IsSuccessStatusCode;
+    }
+
+    public async Task<bool> UnlockAccountAsync(Guid userId)
+    {
+        var response = await _httpClient.PostAsync($"auth/unlock/{userId}", null);
+        return response.IsSuccessStatusCode;
     }
 
     public async Task<bool> NeedsBootstrapAsync()

@@ -23,9 +23,11 @@ public class EquipmentController : ControllerBase
     [HttpGet]
     public async Task<ActionResult<IEnumerable<EquipmentListDto>>> GetEquipment()
     {
+        var today = DateTime.UtcNow.Date;
         var equipmentList = await _context.Equipment
             .AsNoTracking()
             .Include(e => e.MaintenanceEvents)
+            .Include(e => e.DailyQCs.Where(qc => qc.PerformedAt >= today))
             .OrderBy(e => e.Name)
             .ToListAsync();
 
@@ -64,7 +66,9 @@ public class EquipmentController : ControllerBase
                 lastEvent?.PerformedAt,
                 lastEvent?.EventType.ToString(),
                 lastEvent?.Outcome,
-                nextMaint
+                nextMaint,
+                e.DailyQCs.Any(qc => qc.IsPass) ? "PASS" : (e.DailyQCs.Any() ? "FAIL" : "PENDING"),
+                e.DailyQCs.Any(qc => qc.IsPass) ? "Green" : (e.DailyQCs.Any() ? "Red" : "Gray")
             );
         }).ToList();
 
@@ -268,5 +272,68 @@ public class EquipmentController : ControllerBase
         await _context.SaveChangesAsync();
 
         return Ok();
+    }
+
+    [HttpPost("qc")]
+    public async Task<ActionResult> RegisterDailyQC(CreateDailyQCRequest request)
+    {
+        try
+        {
+            var userIdStr = User.FindFirstValue(ClaimTypes.NameIdentifier);
+            Guid creatorId = userIdStr != null ? Guid.Parse(userIdStr) : Guid.Empty;
+
+            var qc = new EquipmentDailyQC
+            {
+                Id = Guid.NewGuid(),
+                EquipmentId = request.EquipmentId,
+                LotNumber = request.LotNumber,
+                IsPass = request.IsPass,
+                Notes = request.Notes,
+                PerformedAt = request.PerformedAt.ToUniversalTime(),
+                PerformedByUserId = creatorId
+            };
+
+            _context.EquipmentDailyQCs.Add(qc);
+            
+            // ISO 15189: If QC Fails, we should log it but maybe not auto-create NC yet, 
+            // but we definitely need to allow the user to see it. 
+            // For now just save the record.
+
+            await _context.SaveChangesAsync();
+            return Ok();
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(500, $"Error al registrar QC: {ex.Message}");
+        }
+    }
+
+    [HttpGet("{id}/qc")]
+    public async Task<ActionResult<IEnumerable<EquipmentDailyQCDto>>> GetDailyQC(Guid id)
+    {
+        // Return last 30 entries
+        var qcs = await _context.EquipmentDailyQCs
+            //.Include(qc => qc.User) // If we had a User navigation property or join
+            .Where(qc => qc.EquipmentId == id)
+            .OrderByDescending(qc => qc.PerformedAt)
+            .Take(30)
+            .ToListAsync();
+            
+        // We need user names. 
+        // Ideally enforce navigation property but for quick fix let's just fetch users
+        var userIds = qcs.Select(q => q.PerformedByUserId).Distinct().ToList();
+        var users = await _context.Users.Where(u => userIds.Contains(u.Id)).ToDictionaryAsync(u => u.Id, u => u.FullName);
+
+        var result = qcs.Select(q => new EquipmentDailyQCDto(
+            q.Id,
+            q.EquipmentId,
+            q.LotNumber,
+            q.IsPass,
+            q.Notes,
+            q.PerformedAt,
+            users.ContainsKey(q.PerformedByUserId) ? users[q.PerformedByUserId] : "Desconocido"
+        ));
+
+        return Ok(result);
     }
 }

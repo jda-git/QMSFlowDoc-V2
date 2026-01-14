@@ -32,6 +32,7 @@ public class StaffController : ControllerBase
 
         var result = staff.Select(s => new StaffListDto(
                 s.Id,
+                s.UserId, // Added UserId
                 s.User?.FullName ?? "N/A",
                 s.PositionTitle,
                 s.Department,
@@ -73,7 +74,7 @@ public class StaffController : ControllerBase
     {
         var profile = await _context.StaffProfiles
             .Include(s => s.User!).ThenInclude(u => u.Roles)
-            .Include(s => s.Trainings).ThenInclude(st => st.TrainingActivity)
+            .Include(s => s.Trainings.Where(t => t.Status != "ANULADO")).ThenInclude(st => st.TrainingActivity)
             .Include(s => s.CompetencyEvaluations).ThenInclude(ce => ce.Competency)
             .FirstOrDefaultAsync(s => s.Id == id);
 
@@ -142,7 +143,7 @@ public class StaffController : ControllerBase
                 profile.User.Email = request.Email;
                 
                 // Update Role
-                var role = await _context.Roles.FirstOrDefaultAsync(r => r.RoleName == request.RoleName);
+                var role = await _context.Roles.FirstOrDefaultAsync(r => r.RoleName.ToLower() == request.RoleName.Trim().ToLower());
                 if (role != null)
                 {
                     profile.User.Roles.Clear();

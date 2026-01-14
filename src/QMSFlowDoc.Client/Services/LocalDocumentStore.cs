@@ -714,7 +714,7 @@ public class LocalDocumentStore
         }
     }
 
-    private async Task<Guid> FindOrCreateFolderIdAsync(string folderName)
+    public async Task<Guid> FindOrCreateFolderIdAsync(string folderName)
     {
         using var connection = new SqliteConnection($"Data Source={_dbPath}");
         await connection.OpenAsync();

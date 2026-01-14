@@ -5,6 +5,7 @@ using Microsoft.UI.Xaml.Media;
 using System;
 using QMSFlowDoc.Client.Services;
 using QMSFlowDoc.Shared.DTOs;
+using QMSFlowDoc.Client.Views.Dialogs;
 
 namespace QMSFlowDoc.Client;
 
@@ -224,6 +225,27 @@ public sealed partial class MainWindow : Window
             default:
                 ContentFrame.Navigate(typeof(Views.DashboardView));
                 break;
+        }
+    }
+    private async void ChangePassword_Tapped(object sender, Microsoft.UI.Xaml.Input.TappedRoutedEventArgs e)
+    {
+        var dialog = new ChangePasswordDialog();
+        dialog.XamlRoot = this.Content.XamlRoot;
+        var result = await dialog.ShowAsync();
+
+        if (result == ContentDialogResult.Primary)
+        {
+            var request = new ChangePasswordRequest(dialog.CurrentPassword, dialog.NewPassword);
+            var success = await _authService.ChangePasswordAsync(request);
+            
+            var msgDialog = new ContentDialog
+            {
+                Title = success ? "Éxito" : "Error",
+                Content = success ? "Contraseña actualizada correctamente." : "No se pudo actualizar la contraseña. Verifique su contraseña actual.",
+                CloseButtonText = "OK",
+                XamlRoot = this.Content.XamlRoot
+            };
+            await msgDialog.ShowAsync();
         }
     }
 }

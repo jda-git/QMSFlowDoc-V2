@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ContentDialog
+    x:Class="QMSFlowDoc.Client.Views.Dialogs.AddCapaDialog"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    mc:Ignorable="d"
+    Title="Nueva Acción CAPA"
+    PrimaryButtonText="Añadir"
+    CloseButtonText="Cancelar"
+    DefaultButton="Primary">
+
+    <StackPanel Spacing="16" MinWidth="400">
+        <TextBlock Text="Defina una acción correctiva o preventiva." TextWrapping="Wrap" />
+        
+        <ComboBox x:Name="TypeCombo" Header="Tipo de Acción" HorizontalAlignment="Stretch" SelectedIndex="0">
+            <ComboBoxItem Content="Correctiva (Corregir el problema)" Tag="CORRECTIVE" />
+            <ComboBoxItem Content="Preventiva (Evitar recurrencia)" Tag="PREVENTIVE" />
+        </ComboBox>
+        
+        <TextBox x:Name="DescriptionBox" 
+                 Header="Descripción de la Acción" 
+                 PlaceholderText="Qué se va a hacer..." 
+                 AcceptsReturn="True" 
+                 Height="80" 
+                 HorizontalAlignment="Stretch"/>
+
+        <DatePicker x:Name="DueDatePicker" Header="Fecha Límite (Due Date)" HorizontalAlignment="Stretch" />
+        
+        <ComboBox x:Name="OwnerCombo" Header="Responsable" DisplayMemberPath="FullName" HorizontalAlignment="Stretch" />
+    </StackPanel>
+</ContentDialog>

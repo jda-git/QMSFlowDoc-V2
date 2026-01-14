@@ -3,51 +3,110 @@
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:local="using:QMSFlowDoc.Client.Views"
+    xmlns:converters="using:QMSFlowDoc.Client.Converters"
+    xmlns:models="using:QMSFlowDoc.Shared.Models"
     xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
-    mc:Ignorable="d"
-    Background="{ThemeResource ApplicationPageBackgroundThemeBrush}">
+    mc:Ignorable="d">
+    <Page.Resources>
+        <converters:DateConverter x:Key="DateConverter" />
+    </Page.Resources>
 
-    <ScrollViewer Padding="24">
-        <StackPanel Spacing="24" MaxWidth="600" HorizontalAlignment="Left">
-            <StackPanel Orientation="Horizontal" Spacing="12">
-                <Button Click="Back_Click">
-                    <FontIcon Glyph="&#xE72B;" />
-                </Button>
-                <TextBlock Text="Reportar No Conformidad" Style="{StaticResource TitleTextBlockStyle}" />
+    <Grid Background="{ThemeResource ApplicationPageBackgroundThemeBrush}" Padding="24">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
+
+        <StackPanel Spacing="12">
+            <StackPanel Orientation="Horizontal" Spacing="8">
+                <Button Content="&#xE72B;" FontFamily="Segoe MDL2 Assets" Click="Back_Click" />
+                <TextBlock x:Name="PageHeader" Text="Editar No Conformidad" Style="{StaticResource TitleTextBlockStyle}" VerticalAlignment="Center" />
             </StackPanel>
+            <TextBlock x:Name="ErrorText" Foreground="Red" Visibility="Collapsed" />
+        </StackPanel>
 
-            <StackPanel Spacing="16">
-                <TextBox x:Name="TitleBox" Header="Título de la Incidencia" PlaceholderText="Ej: Error en etiquetado de muestras" />
-                <TextBox x:Name="DescriptionBox" Header="Descripción de lo sucedido" PlaceholderText="Describa el hallazgo..." AcceptsReturn="True" Height="100" />
+        <ScrollViewer Grid.Row="1" Margin="0,16,0,0">
+            <StackPanel Spacing="16" MaxWidth="800" HorizontalAlignment="Left">
+                <TextBox x:Name="TitleBox" Header="Título" PlaceholderText="Resumen de la incidencia" />
                 
-                <Grid ColumnDefinitions="*, *" RowDefinitions="Auto, Auto" ColumnSpacing="16" RowSpacing="12">
-                    <ComboBox x:Name="SeverityCombo" Header="Gravedad" HorizontalAlignment="Stretch">
-                        <ComboBoxItem Content="Observación" Tag="0" />
-                        <ComboBoxItem Content="Menor" Tag="1" IsSelected="True" />
-                        <ComboBoxItem Content="Mayor" Tag="2" />
-                        <ComboBoxItem Content="Crítica" Tag="3" />
+                <Grid ColumnDefinitions="*, *" ColumnSpacing="16">
+                    <ComboBox x:Name="SeverityCombo" Header="Severidad" HorizontalAlignment="Stretch" SelectedIndex="0">
+                        <ComboBoxItem Content="Leve" Tag="1" />
+                        <ComboBoxItem Content="Moderada" Tag="2" />
+                        <ComboBoxItem Content="Grave" Tag="3" />
+                        <ComboBoxItem Content="Crítica" Tag="4" />
                     </ComboBox>
                     
-                    <ComboBox x:Name="StatusCombo" Header="Estado" HorizontalAlignment="Stretch" Grid.Column="1">
-                        <ComboBoxItem Content="OPEN" IsSelected="True" />
-                        <ComboBoxItem Content="ANALYSIS" />
-                        <ComboBoxItem Content="VERIFICATION" />
+                    <ComboBox x:Name="StatusCombo" Header="Estado" HorizontalAlignment="Stretch" SelectedIndex="0">
+                        <ComboBoxItem Content="OPEN" />
+                        <ComboBoxItem Content="INVESTIGATING" />
+                        <ComboBoxItem Content="ACTION_REQUIRED" />
+                        <ComboBoxItem Content="MONITORING" />
                         <ComboBoxItem Content="CLOSED" />
                     </ComboBox>
-
-                    <CheckBox x:Name="ImpactPatientCheck" Content="¿Impacto en Paciente?" Grid.Row="1" />
                 </Grid>
 
-                <TextBox x:Name="ContainmentBox" Header="Acción Inmediata / Contención" PlaceholderText="¿Qué se hizo al momento?" AcceptsReturn="True" Height="80" />
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <TextBox x:Name="DescriptionBox" Header="Descripción Detallada" AcceptsReturn="True" Height="100" />
+                    <CheckBox x:Name="ImpactPatientCheck" Content="¿Impacto en Paciente?" Grid.Column="1" VerticalAlignment="Bottom" Margin="0,0,0,12" />
+                </Grid>
+
+                <TextBox x:Name="ContainmentBox" Header="Acción Inmediata / Contención" PlaceholderText="¿Qué se hizo al momento?" AcceptsReturn="True" Height="60" />
+
+                <!-- ISO 15189: RCA & Origin -->
+                <Grid ColumnDefinitions="*, *" ColumnSpacing="16">
+                    <ComboBox x:Name="OriginCombo" Header="Origen (Causa Raíz)" HorizontalAlignment="Stretch" IsEditable="True">
+                         <ComboBoxItem Content="Reactivo / Material" />
+                         <ComboBoxItem Content="Equipo / Instrumento" />
+                         <ComboBoxItem Content="Procedimiento / Documento" />
+                         <ComboBoxItem Content="Personal / Competencia" />
+                         <ComboBoxItem Content="Ambiente / Infraestructura" />
+                         <ComboBoxItem Content="Sistema Informático" />
+                         <ComboBoxItem Content="Externo / Proveedor" />
+                    </ComboBox>
+                </Grid>
+                
+                <TextBox x:Name="RcaBox" Header="Análisis de Causa Raíz (RCA)" PlaceholderText="¿Por qué ocurrió? (5 Porqués, Ishikawa...)" AcceptsReturn="True" Height="80" />
+
+                <!-- CAPA Actions -->
+                <Grid RowDefinitions="Auto, Auto">
+                    <StackPanel Orientation="Horizontal" Spacing="12" Margin="0,12,0,8">
+                        <TextBlock Text="Acciones Correctivas y Preventivas (CAPA)" Style="{StaticResource SubtitleTextBlockStyle}" VerticalAlignment="Center" />
+                        <Button Content="Añadir Acción" Click="AddAction_Click" Style="{StaticResource AccentButtonStyle}" />
+                    </StackPanel>
+                    
+                    <ListView Grid.Row="1" x:Name="ActionsList" Height="150" BorderThickness="1" BorderBrush="#E0E0E0" CornerRadius="4">
+                        <ListView.ItemTemplate>
+                            <DataTemplate x:DataType="models:CapaAction">
+                                <Grid Padding="8">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="100" />
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="100" />
+                                        <ColumnDefinition Width="100" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Text="{x:Bind ActionType}" FontWeight="Bold" Foreground="Gray" />
+                                    <TextBlock Text="{x:Bind Description}" Grid.Column="1" Margin="12,0,0,0" TextTrimming="CharacterEllipsis" />
+                                    <TextBlock Text="{x:Bind Status}" Grid.Column="2" HorizontalAlignment="Right" />
+                                    <TextBlock Text="{x:Bind DueDate, Converter={StaticResource DateConverter}}" Grid.Column="3" HorizontalAlignment="Right" Foreground="Orange" />
+                                </Grid>
+                            </DataTemplate>
+                        </ListView.ItemTemplate>
+                    </ListView>
+                </Grid>
 
                 <StackPanel Orientation="Horizontal" Spacing="12" Margin="0,12,0,0">
                     <Button Content="Enviar Reporte" Style="{StaticResource AccentButtonStyle}" Click="Save_Click" />
                     <Button Content="Cancelar" Click="Back_Click" />
                 </StackPanel>
                 
-                <TextBlock x:Name="ErrorText" Foreground="#E81123" Visibility="Collapsed" />
+
             </StackPanel>
-        </StackPanel>
-    </ScrollViewer>
+        </ScrollViewer>
+    </Grid>
 </Page>

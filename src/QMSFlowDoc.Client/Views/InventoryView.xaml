@@ -88,7 +88,7 @@
                         <TextBlock Text="{x:Bind TotalStock.ToString()}" Grid.Column="6" FontWeight="SemiBold" Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}" HorizontalAlignment="Right" />
                         <TextBlock Text="{x:Bind TargetStock.ToString()}" Grid.Column="7" Foreground="Gray" HorizontalAlignment="Right" />
                         <TextBlock Text="{x:Bind MinStock.ToString()}" Grid.Column="8" HorizontalAlignment="Right" />
-                        <TextBlock Text="{x:Bind Status}" Grid.Column="9" HorizontalAlignment="Right" />
+                        <TextBlock Text="{x:Bind Status}" Grid.Column="9" HorizontalAlignment="Right" Foreground="{x:Bind local:InventoryView.GetStatusColor(ExpiryStatus)}" FontWeight="Bold" />
                     </Grid>
                 </DataTemplate>
             </ListView.ItemTemplate>

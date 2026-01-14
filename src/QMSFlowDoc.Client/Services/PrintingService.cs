@@ -2,6 +2,7 @@ using QuestPDF.Fluent;
 using QuestPDF.Helpers;
 using QuestPDF.Infrastructure;
 using QMSFlowDoc.Shared.DTOs;
+using QMSFlowDoc.Shared.Models;
 using System.Collections.Generic;
 using System.Linq;
 using System;
@@ -16,6 +17,7 @@ public interface IPrintingService
     void GenerateOrderReport(IEnumerable<ReagentListDto> items, string outputPath, string userName);
     void GenerateMovementsReport(IEnumerable<InventoryMovementDto> movements, string title, DateTime? start, DateTime? end, string outputPath, string userName);
     void GenerateEntriesReport(IEnumerable<InventoryMovementDto> movements, DateTime? start, DateTime? end, string outputPath, string userName);
+    void GenerateTrainingPlan(StaffProfile profile, List<CompetencyEvaluationDto> competencies, List<StaffAuthorizationDto> authorizations, string outputPath, string userName);
 }
 
 
@@ -27,7 +29,7 @@ public class PrintingService : IPrintingService
         // QuestPDF License - Community (Required to be set)
         QuestPDF.Settings.License = LicenseType.Community;
 
-        var documentModel = Document.Create(container =>
+        var documentModel = QuestPDF.Fluent.Document.Create(container =>
         {
             container.Page(page =>
             {
@@ -94,7 +96,7 @@ public class PrintingService : IPrintingService
     public void GenerateInventoryReport(IEnumerable<ReagentListDto> reagents, string sortInfo, string outputPath, string userName)
     {
         QuestPDF.Settings.License = LicenseType.Community;
-        var doc = Document.Create(container =>
+        var doc = QuestPDF.Fluent.Document.Create(container =>
         {
             container.Page(page =>
             {
@@ -184,7 +186,7 @@ public class PrintingService : IPrintingService
     public void GenerateOrderReport(IEnumerable<ReagentListDto> items, string outputPath, string userName)
     {
         QuestPDF.Settings.License = LicenseType.Community;
-        Document.Create(container =>
+        QuestPDF.Fluent.Document.Create(container =>
         {
             container.Page(page =>
             {
@@ -252,7 +254,7 @@ public class PrintingService : IPrintingService
     {
          // Keep existing implementation for Consumption/Movements generic
          QuestPDF.Settings.License = LicenseType.Community;
-        Document.Create(container =>
+        QuestPDF.Fluent.Document.Create(container =>
         {
             container.Page(page =>
             {
@@ -322,7 +324,7 @@ public class PrintingService : IPrintingService
     public void GenerateEntriesReport(IEnumerable<InventoryMovementDto> movements, DateTime? start, DateTime? end, string outputPath, string userName)
     {
         QuestPDF.Settings.License = LicenseType.Community;
-        Document.Create(container =>
+        QuestPDF.Fluent.Document.Create(container =>
         {
             container.Page(page =>
             {
@@ -395,6 +397,151 @@ public class PrintingService : IPrintingService
                     r.RelativeItem().Text($"Generado por: {userName} - {DateTime.Now}");
                     r.RelativeItem().AlignRight().Text(x => { x.CurrentPageNumber(); x.Span(" / "); x.TotalPages(); });
                 });
+            });
+        }).GeneratePdf(outputPath);
+    }
+    public void GenerateTrainingPlan(
+        StaffProfile profile, 
+        List<CompetencyEvaluationDto> competencies,
+        List<StaffAuthorizationDto> authorizations,
+        string outputPath, 
+        string userName)
+    {
+        QuestPDF.Settings.License = LicenseType.Community;
+        QuestPDF.Fluent.Document.Create(container =>
+        {
+            container.Page(page =>
+            {
+                page.Size(PageSizes.A4);
+                page.Margin(1.5f, Unit.Centimetre);
+                page.DefaultTextStyle(x => x.FontSize(10).FontFamily(Fonts.Verdana));
+
+                // Header
+                page.Header().Row(row =>
+                {
+                    row.RelativeItem().Column(col =>
+                    {
+                        col.Item().Text("Plan de Formación Continua").FontSize(16).SemiBold().FontColor(Colors.Blue.Medium);
+                        col.Item().Text($"Empleado: {profile.User?.FullName}").FontSize(12).Bold();
+                        col.Item().Text($"Puesto: {profile.PositionTitle} | Dpto: {profile.Department}");
+                    });
+                    
+                    row.ConstantItem(150).AlignRight().Column(col => 
+                    {
+                         col.Item().Text($"Fecha: {DateTime.Now:dd/MM/yyyy}");
+                         col.Item().Text("QMS FlowDoc ISO 15189").FontSize(8).Italic();
+                    });
+                });
+
+                page.Content().PaddingVertical(10).Column(col =>
+                {
+                    // Section 1: Formación Reciente
+                    col.Item().Background(Colors.Grey.Lighten4).Padding(5).Text("1. Historial de Formación y Educación").Bold();
+                    col.Item().PaddingTop(5).Table(table =>
+                    {
+                        table.ColumnsDefinition(c => 
+                        {
+                            c.RelativeColumn(3); // Title
+                            c.RelativeColumn(2); // Provider
+                            c.RelativeColumn(1); // Date
+                            c.RelativeColumn(0.5f); // Hours
+                            c.RelativeColumn(1); // Result
+                        });
+
+                        table.Header(h => 
+                        {
+                            h.Cell().Element(HS).Text("Actividad");
+                            h.Cell().Element(HS).Text("Proveedor");
+                            h.Cell().Element(HS).Text("Fecha");
+                            h.Cell().Element(HS).Text("Hrs");
+                            h.Cell().Element(HS).Text("Result.");
+                        });
+
+                        foreach(var t in profile.Trainings.OrderByDescending(x => x.CompletionDate))
+                        {
+                            table.Cell().Element(CS).Text(t.TrainingActivity?.Title ?? "-");
+                            table.Cell().Element(CS).Text(t.TrainingActivity?.Provider ?? "-");
+                            table.Cell().Element(CS).Text($"{t.CompletionDate:dd/MM/yyyy}");
+                            table.Cell().Element(CS).Text($"{t.TrainingActivity?.Hours}");
+                            table.Cell().Element(CS).Text(t.Result ?? "-");
+                        }
+                    });
+
+                    // Section 2: Competencias
+                    col.Item().PaddingTop(15).Background(Colors.Grey.Lighten4).Padding(5).Text("2. Evaluación de Competencias").Bold();
+                    col.Item().PaddingTop(5).Table(table =>
+                    {
+                         table.ColumnsDefinition(c => 
+                        {
+                            c.RelativeColumn(2); // Name
+                            c.RelativeColumn(1.5f); // Area
+                            c.RelativeColumn(1); // Date
+                            c.RelativeColumn(1); // Valid Until
+                            c.RelativeColumn(1); // Outcome
+                        });
+                        
+                        table.Header(h => 
+                        {
+                            h.Cell().Element(HS).Text("Competencia");
+                            h.Cell().Element(HS).Text("Área");
+                            h.Cell().Element(HS).Text("Evaluación");
+                            h.Cell().Element(HS).Text("Vencimiento");
+                            h.Cell().Element(HS).Text("Estado");
+                        });
+
+                        foreach(var c in competencies.OrderBy(x => x.CompetencyName))
+                        {
+                            table.Cell().Element(CS).Text(c.CompetencyName ?? "-");
+                            table.Cell().Element(CS).Text(c.Area ?? "-");
+                            table.Cell().Element(CS).Text($"{c.EvaluationDate:dd/MM/yyyy}");
+                            table.Cell().Element(CS).Text($"{c.ValidUntil:dd/MM/yyyy}");
+                            
+                            var statusColor = c.Outcome == "COMPETENTE" ? Colors.Green.Darken1 : Colors.Red.Darken1;
+                            table.Cell().Element(CS).Text(c.Outcome ?? "-").Bold().FontColor(statusColor);
+                        }
+                    });
+
+                    // Section 3: Autorizaciones
+                    col.Item().PaddingTop(15).Background(Colors.Grey.Lighten4).Padding(5).Text("3. Autorizaciones Vigentes").Bold();
+                    col.Item().PaddingTop(5).Table(table =>
+                    {
+                         table.ColumnsDefinition(c => 
+                        {
+                            c.RelativeColumn(2); // Task
+                            c.RelativeColumn(2); // Description
+                            c.RelativeColumn(1); // From
+                            c.RelativeColumn(1); // Until
+                            c.RelativeColumn(1.5f); // Granted By
+                        });
+                        
+                        table.Header(h => 
+                        {
+                            h.Cell().Element(HS).Text("Tarea");
+                            h.Cell().Element(HS).Text("Descripción");
+                            h.Cell().Element(HS).Text("Desde");
+                            h.Cell().Element(HS).Text("Hasta");
+                            h.Cell().Element(HS).Text("Autorizado Por");
+                        });
+
+                        foreach(var a in authorizations)
+                        {
+                            table.Cell().Element(CS).Text(a.AuthorizationName ?? "-");
+                            table.Cell().Element(CS).Text(a.Description ?? "-");
+                            table.Cell().Element(CS).Text($"{a.ValidFrom:dd/MM/yyyy}");
+                            table.Cell().Element(CS).Text($"{a.ValidUntil:dd/MM/yyyy}");
+                            table.Cell().Element(CS).Text(a.GrantedByName ?? "-");
+                        }
+                    });
+                });
+
+                page.Footer().Row(r => 
+                {
+                    r.RelativeItem().Text($"Generado por: {userName}");
+                    r.RelativeItem().AlignRight().Text(x => { x.CurrentPageNumber(); x.Span(" / "); x.TotalPages(); });
+                });
+
+                static IContainer HS(IContainer c) => c.BorderBottom(1).Padding(2).DefaultTextStyle(x => x.SemiBold().FontSize(9));
+                static IContainer CS(IContainer c) => c.BorderBottom(0.5f).BorderColor(Colors.Grey.Lighten3).Padding(2).DefaultTextStyle(x => x.FontSize(9));
             });
         }).GeneratePdf(outputPath);
     }

@@ -116,9 +116,23 @@ public sealed partial class ImprovementView : Page
         }
     }
 
-    private void AddAudit_Click(object sender, RoutedEventArgs e)
+    private async void AddAudit_Click(object sender, RoutedEventArgs e)
     {
-        Frame.Navigate(typeof(AuditEditorView));
+        try
+        {
+            Frame.Navigate(typeof(AuditEditorView));
+        }
+        catch (Exception ex)
+        {
+            var dialog = new ContentDialog
+            {
+                Title = "Error de Navegación",
+                Content = $"No se pudo abrir el editor de auditoría: {ex.Message}",
+                CloseButtonText = "OK",
+                XamlRoot = this.XamlRoot
+            };
+            await dialog.ShowAsync();
+        }
     }
 
     private void AddReview_Click(object sender, RoutedEventArgs e)

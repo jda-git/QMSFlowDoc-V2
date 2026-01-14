@@ -50,13 +50,17 @@ public sealed partial class ReviewEditorView : Page
                 
                 if (reportType == null) throw new Exception("No se encontraron tipos de documentos.");
 
+                // Lookup Folder
+                var folderId = await docService.GetOrCreateFolderIdAsync("AUDITORIA");
+
                 var createReq = new CreateDocumentRequest(
                    DocCode: "REV-" + DateTime.Now.Ticks.ToString().Substring(10),
                    Title: $"Acta Revisión {ReviewDatePicker.Date.Year}",
                    DocumentTypeId: reportType.Id,
-                   FolderId: null, 
+                   FolderId: folderId, 
                    Area: "Management",
                    Process: "Review",
+                   Status: DocumentStatus.APPROVED,
                    ReviewIntervalMonths: 12,
                    VersionLabel: "v1.0"
                 );
@@ -81,7 +85,7 @@ public sealed partial class ReviewEditorView : Page
                 }
                 else
                 {
-                    FileNameText.Text = "Error creando registro.";
+                    FileNameText.Text = "Error creando registro (Documento nulo).";
                 }
             }
             catch (Exception ex)

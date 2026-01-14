@@ -14,6 +14,29 @@ public sealed partial class AddTrainingDialog : ContentDialog
     public string Result { get; private set; } = "APTO";
     public string? Notes { get; private set; }
 
+    public void LoadData(StaffTrainingDto dto)
+    {
+        TitleBox.Text = dto.Title;
+        ProviderBox.Text = dto.Provider;
+        HoursBox.Text = dto.Hours.ToString();
+        CompletionDatePicker.Date = dto.CompletionDate;
+        
+        foreach(ComboBoxItem item in ResultCombo.Items)
+        {
+            if (item.Tag?.ToString() == dto.Result)
+            {
+                ResultCombo.SelectedItem = item;
+                break;
+            }
+        }
+        
+        // Note: Notes are not in DTO currently, might be empty
+        // Title text update
+        this.Title = "Editar Formación";
+        this.PrimaryButtonText = "Guardar";
+        this.SecondaryButtonText = "Eliminar"; // Enable Delete button
+    }
+
     public AddTrainingDialog()
     {
         this.InitializeComponent();

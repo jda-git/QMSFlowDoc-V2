@@ -1,5 +1,6 @@
 using Microsoft.UI.Xaml.Controls;
 using QMSFlowDoc.Shared.Models;
+using QMSFlowDoc.Shared.DTOs;
 using System;
 
 namespace QMSFlowDoc.Client.Views.Dialogs;
@@ -13,6 +14,41 @@ public sealed partial class AssessCompetencyDialog : ContentDialog
     public DateTime EvaluationDate { get; private set; }
     public DateTime? ValidUntil { get; private set; }
     public string Evidence { get; private set; } = string.Empty;
+
+    public void LoadData(CompetencyEvaluationDto dto)
+    {
+        CompetencyNameBox.Text = dto.CompetencyName;
+        AreaBox.Text = dto.Area;
+        EvalDate.Date = dto.EvaluationDate;
+        if (dto.ValidUntil.HasValue) ExpiryDate.Date = dto.ValidUntil.Value;
+        EvidenceBox.Text = string.Empty; // Evidence not in DTO usually? wait, DTO properties?
+        // DTO has Outcome as string "COMPETENTE" etc.
+        // Need to map string to Tag
+        
+        // CompetencyEvaluationDto (lines 353 in Controller) maps outcome string.
+        // DTO definition: public record CompetencyEvaluationDto(...)
+        // Let's assume DTO.Outcome matches logic.
+        
+        string tag = dto.Outcome switch {
+            "COMPETENTE" => "PASS",
+            "NO_COMPETENTE" => "FAIL",
+            "EN_FORMACION" => "CONDITIONAL",
+            _ => "CONDITIONAL"
+        };
+
+        foreach(ComboBoxItem item in OutcomeCombo.Items)
+        {
+            if (item.Tag?.ToString() == tag)
+            {
+                OutcomeCombo.SelectedItem = item;
+                break;
+            }
+        }
+        
+        this.Title = "Editar Competencia";
+        this.PrimaryButtonText = "Guardar";
+        this.SecondaryButtonText = "Eliminar"; // Enable Delete button
+    }
 
     public AssessCompetencyDialog()
     {

@@ -67,6 +67,21 @@ public class InventoryController : ControllerBase
                     .ToList()
             })
             .ToListAsync();
+            
+        // Calculate expiry status in memory
+        var now = DateTime.UtcNow;
+        foreach(var item in list)
+        {
+            if (item.AvailableLots.Any())
+            {
+                var nearest = item.AvailableLots.First().ExpiryDate;
+                item.NearestExpiry = nearest;
+                
+                if (nearest < now) item.ExpiryStatus = 2; // Expired
+                else if ((nearest - now).TotalDays < 60) item.ExpiryStatus = 1; // Warning
+                else item.ExpiryStatus = 0; // OK
+            }
+        }
 
         if (isLowStock.HasValue && isLowStock.Value)
         {

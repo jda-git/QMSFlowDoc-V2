@@ -35,6 +35,7 @@ public class Equipment
 
     public List<MaintenancePlan> MaintenancePlans { get; set; } = new();
     public List<MaintenanceEvent> MaintenanceEvents { get; set; } = new();
+    public List<EquipmentDailyQC> DailyQCs { get; set; } = new();
 }
 
 public class MaintenancePlan

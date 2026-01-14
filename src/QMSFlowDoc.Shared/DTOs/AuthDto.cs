@@ -6,3 +6,7 @@ public record LoginResponse(string Token, string Username, string FullName, List
 
 public record RegisterRequest(string Username, string Password, string FullName, string Email, string RoleName);
 
+public record ChangePasswordRequest(string CurrentPassword, string NewPassword);
+
+public record ResetPasswordRequest(string NewPassword);
+

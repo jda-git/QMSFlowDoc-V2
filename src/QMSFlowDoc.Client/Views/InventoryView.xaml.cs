@@ -1,6 +1,7 @@
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Navigation;
+using Microsoft.UI;
 using QMSFlowDoc.Shared.DTOs;
 using QMSFlowDoc.Client.Services;
 using System;
@@ -470,5 +471,14 @@ public sealed partial class InventoryView : Page
                 ShowError("Error al borrar el reactivo.");
             }
         }
+    }
+    public static Microsoft.UI.Xaml.Media.Brush GetStatusColor(int status)
+    {
+        return status switch
+        {
+            2 => new Microsoft.UI.Xaml.Media.SolidColorBrush(Colors.Red),
+            1 => new Microsoft.UI.Xaml.Media.SolidColorBrush(Colors.Orange),
+            _ => (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["TextFillColorPrimaryBrush"] // Use theme brush
+        };
     }
 }

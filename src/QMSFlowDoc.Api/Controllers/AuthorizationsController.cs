@@ -37,7 +37,7 @@ public class AuthorizationsController : ControllerBase
         var auths = await _context.StaffAuthorizations
             .Include(a => a.Authorization)
             .Include(a => a.GrantedByUser)
-            .Where(a => a.StaffId == staffId)
+            .Where(a => a.StaffId == staffId && a.Status != "REVOCADA")
             .OrderByDescending(a => a.GrantedAt)
             .Select(a => new StaffAuthorizationDto(
                 a.Id,

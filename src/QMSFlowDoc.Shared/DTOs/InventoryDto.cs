@@ -20,6 +20,11 @@ public class ReagentListDto
 
     public string LotFechaSummary => string.Join(" ", AvailableLots.Select(l => l.FormattedString));
 
+    public DateTime? NearestExpiry { get; set; }
+    
+    // 0 = OK, 1 = Warning (< 60 days), 2 = Expired
+    public int ExpiryStatus { get; set; } 
+
     public ReagentListDto() { }
     public ReagentListDto(Guid id, string name, string? manu, string? code, string? fluorescence, string type, string reference, ReagentStatus status, decimal stock, decimal min, decimal target)
     {

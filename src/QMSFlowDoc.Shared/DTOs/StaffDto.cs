@@ -6,6 +6,7 @@ namespace QMSFlowDoc.Shared.DTOs;
 public class StaffListDto
 {
     public Guid Id { get; set; }
+    public Guid? UserId { get; set; } // Added for user linkage
     public string FullName { get; set; } = string.Empty;
     public string? PositionTitle { get; set; }
     public string? Department { get; set; }
@@ -16,9 +17,9 @@ public class StaffListDto
     public string? RoleName { get; set; }
 
     public StaffListDto() { }
-    public StaffListDto(Guid id, string name, string? pos, string? dept, bool active, int training, int competency, string? roleName = null)
+    public StaffListDto(Guid id, Guid? userId, string name, string? pos, string? dept, bool active, int training, int competency, string? roleName = null)
     {
-        Id = id; FullName = name; PositionTitle = pos; Department = dept;
+        Id = id; UserId = userId; FullName = name; PositionTitle = pos; Department = dept;
         IsActive = active; TrainingCount = training; CompetencyPassCount = competency;
         RoleName = roleName;
     }

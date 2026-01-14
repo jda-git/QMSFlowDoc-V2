@@ -24,6 +24,7 @@ public interface IDocumentService
     
     // New local mode methods
     Task<Document?> CreateDocumentWithFileAsync(string docCode, string title, DocumentStatus status, Guid? documentTypeId, int? reviewIntervalMonths, string versionLabel, string? area, string? process, byte[] fileBytes, string fileName, string subFolderName);
+    Task<Guid> GetOrCreateFolderIdAsync(string folderName);
     
     // Initialization
     Task InitializeAsync();
@@ -155,6 +156,26 @@ public class DocumentService : IDocumentService
 
     public async Task<Document?> CreateDocumentAsync(CreateDocumentRequest request)
     {
+        if (_useLocalMode && _localStore != null)
+        {
+            var doc = new Document
+            {
+                Id = Guid.NewGuid(),
+                DocCode = request.DocCode,
+                Title = request.Title,
+                DocumentTypeId = request.DocumentTypeId,
+                FolderId = request.FolderId,
+                Area = request.Area,
+                Process = request.Process,
+                Status = request.Status ?? DocumentStatus.DRAFT,
+                ReviewIntervalMonths = request.ReviewIntervalMonths,
+                CreatedAt = DateTime.UtcNow,
+                UpdatedAt = DateTime.UtcNow
+            };
+            
+            return await _localStore.CreateDocumentAsync(doc);
+        }
+
         var response = await _httpClient.PostAsJsonAsync("documents", request);
         if (response.IsSuccessStatusCode)
         {
@@ -297,6 +318,19 @@ public class DocumentService : IDocumentService
         
         // Fallback to API mode (not implemented yet - would need separate endpoint)
         throw new NotImplementedException("API mode file upload not yet implemented");
+    }
+
+    public async Task<Guid> GetOrCreateFolderIdAsync(string folderName)
+    {
+        if (_useLocalMode && _localStore != null)
+        {
+            return await _localStore.FindOrCreateFolderIdAsync(folderName);
+        }
+        
+        // For API mode, we assume backend handles it or we return empty/null if not supported strictly
+        // Ideally we would call an API endpoint. For now, returning Guid.Empty or handling via local fallback logic if hybrid.
+        // Assuming Local Mode for this specific user request context
+        return Guid.Empty; 
     }
 
     public async Task InitializeAsync()

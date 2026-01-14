@@ -166,7 +166,7 @@ public class AuthController : ControllerBase
             return BadRequest("El nombre de usuario ya existe.");
         }
 
-        var role = await _context.Roles.FirstOrDefaultAsync(r => r.RoleName == request.RoleName);
+        var role = await _context.Roles.FirstOrDefaultAsync(r => r.RoleName.ToLower() == request.RoleName.Trim().ToLower());
         if (role == null)
         {
             role = await _context.Roles.FirstOrDefaultAsync(r => r.RoleName == "Consultor");
@@ -325,6 +325,51 @@ public class AuthController : ControllerBase
         await _context.SaveChangesAsync();
 
         return Ok(new { Message = $"Contraseña de '{request.Username}' reseteada correctamente. La cuenta ha sido desbloqueada." });
+    }
+
+    [HttpPost("promote-to-admin")]
+    public async Task<ActionResult> PromoteToAdmin([FromBody] PromoteToAdminRequest request)
+    {
+        var configToken = _configuration["Security:EmergencyResetToken"];
+        if (string.IsNullOrEmpty(configToken) || request.EmergencyToken != configToken)
+        {
+            await LogAuditAsync(null, "PROMOTE_ADMIN_FAIL", "Auth", null, 
+                $"Intento de promoción fallido para: {request.Username}", "FAIL");
+            return Unauthorized("Token de emergencia inválido.");
+        }
+
+        var user = await _context.Users.Include(u => u.Roles).FirstOrDefaultAsync(u => u.Username == request.Username);
+        if (user == null) return NotFound($"Usuario '{request.Username}' no encontrado.");
+
+        var roleName = "Administrador";
+        var adminRole = await _context.Roles.FirstOrDefaultAsync(r => r.RoleName == roleName);
+        
+        if (adminRole == null) 
+        {
+            // Auto-create role if missing
+             adminRole = new Role 
+             { 
+                 Id = Guid.NewGuid(), 
+                 RoleName = roleName, 
+                 Description = "Auto-created by Emergency Promote" 
+             };
+             _context.Roles.Add(adminRole);
+             await _context.SaveChangesAsync(); // Save to get ID
+        }
+
+        if (!user.Roles.Any(r => r.RoleName == roleName))
+        {
+            user.Roles.Add(adminRole);
+            user.IsActive = true;
+            user.LockedUntil = null;
+            user.FailedLoginAttempts = 0;
+            
+            await LogAuditAsync(null, "PROMOTE_ADMIN_OK", "User", user.Id, 
+                $"Usuario promovido a Administrador: {request.Username}", "OK");
+            await _context.SaveChangesAsync();
+        }
+
+        return Ok(new { Message = $"Usuario '{request.Username}' es ahora Administrador." });
     }
 
     /// <summary>
@@ -501,6 +546,7 @@ public class AuthController : ControllerBase
 public record ResetPasswordRequest(string NewPassword);
 public record ChangePasswordRequest(string CurrentPassword, string NewPassword);
 public record EmergencyResetRequest(string EmergencyToken, string Username, string NewPassword);
+public record PromoteToAdminRequest(string EmergencyToken, string Username);
 public record PurgeAndResetRequest(
     string EmergencyToken, 
     string AdminUsername, 

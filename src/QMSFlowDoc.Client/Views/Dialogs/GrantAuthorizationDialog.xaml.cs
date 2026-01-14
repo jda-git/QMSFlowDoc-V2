@@ -1,4 +1,5 @@
 using Microsoft.UI.Xaml.Controls;
+using QMSFlowDoc.Shared.DTOs;
 using System;
 
 namespace QMSFlowDoc.Client.Views.Dialogs;
@@ -10,6 +11,18 @@ public sealed partial class GrantAuthorizationDialog : ContentDialog
     public string? Description { get; private set; }
     public DateTime ValidFrom { get; private set; }
     public DateTime? ValidUntil { get; private set; }
+
+    public void LoadData(StaffAuthorizationDto dto)
+    {
+        TaskNameBox.Text = dto.AuthorizationName;
+        DescriptionBox.Text = dto.Description;
+        FromDate.Date = dto.ValidFrom;
+        if (dto.ValidUntil.HasValue) UntilDate.Date = dto.ValidUntil.Value;
+        
+        this.Title = "Editar Autorización";
+        this.PrimaryButtonText = "Guardar";
+        this.SecondaryButtonText = "Eliminar"; // Enable Delete button
+    }
 
     public GrantAuthorizationDialog()
     {

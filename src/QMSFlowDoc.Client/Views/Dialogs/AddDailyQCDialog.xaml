@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ContentDialog
+    x:Class="QMSFlowDoc.Client.Views.Dialogs.AddDailyQCDialog"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    mc:Ignorable="d"
+    Title="Registrar QC Diario"
+    PrimaryButtonText="Registrar"
+    CloseButtonText="Cancelar"
+    DefaultButton="Primary">
+
+    <StackPanel Spacing="16" MinWidth="400">
+        <TextBlock Text="Registre el resultado del control de calidad diario." TextWrapping="Wrap" />
+        
+        <!-- Result Selector -->
+        <ComboBox x:Name="ResultCombo" Header="Resultado" HorizontalAlignment="Stretch" SelectedIndex="0">
+            <ComboBoxItem Content="PASS (Apto)" Tag="PASS" />
+            <ComboBoxItem Content="FAIL (No Apto)" Tag="FAIL" />
+        </ComboBox>
+        
+        <!-- Lot Number for Traceability -->
+        <TextBox x:Name="LotNumberBox" 
+                 Header="Lote de Beads/Reactivo" 
+                 PlaceholderText="Ej: BD-CST-2024-01" 
+                 HorizontalAlignment="Stretch"/>
+
+        <!-- Notes -->
+        <TextBox x:Name="NotesBox" 
+                 Header="Notas / Observaciones" 
+                 PlaceholderText="Opcional" 
+                 AcceptsReturn="True" 
+                 Height="80" 
+                 HorizontalAlignment="Stretch"/>
+                 
+        <!-- Date -->
+        <CalendarDatePicker x:Name="DateBox" Header="Fecha" HorizontalAlignment="Stretch" />
+    </StackPanel>
+</ContentDialog>

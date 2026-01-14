@@ -18,12 +18,16 @@ public class EquipmentListDto
     public string? LastEventType { get; set; }
     public string? LastOutcome { get; set; }
     public string? NextMaintenanceDue { get; set; }
+    public string? TodayQCStatus { get; set; } // "PASS", "FAIL", "PENDING"
+    public string? TodayQCColor { get; set; }
 
     public EquipmentListDto() { }
-    public EquipmentListDto(Guid id, string? tag, string name, string? model, string? sw, string? fw, string? loc, EquipmentStatus status, Guid? lastId, DateTime? last, string? eventType, string? outcome, string? next)
+    public EquipmentListDto(Guid id, string? tag, string name, string? model, string? sw, string? fw, string? loc, EquipmentStatus status, Guid? lastId, DateTime? last, string? eventType, string? outcome, string? next, string? todayQC, string? todayColor)
     {
         Id = id; AssetTag = tag; Name = name; Model = model; SoftwareVersion = sw; FirmwareVersion = fw; Location = loc; Status = status;
         LastMaintenanceEventId = lastId; LastMaintenanceAt = last; LastEventType = eventType; LastOutcome = outcome; NextMaintenanceDue = next;
+        TodayQCStatus = todayQC;
+        TodayQCColor = todayColor;
     }
 
     // Helper properties for UI binding
@@ -78,4 +82,22 @@ public record UpdateMaintenanceRequest(
     bool? HasIssues,
     int? NextMaintenanceMonth,
     int? NextMaintenanceYear
+);
+
+public record CreateDailyQCRequest(
+    Guid EquipmentId,
+    string LotNumber,
+    bool IsPass,
+    string? Notes,
+    DateTime PerformedAt
+);
+
+public record EquipmentDailyQCDto(
+    Guid Id,
+    Guid EquipmentId,
+    string LotNumber,
+    bool IsPass,
+    string? Notes,
+    DateTime PerformedAt,
+    string PerformedByName
 );
