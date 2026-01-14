@@ -281,6 +281,124 @@ public class AuthController : ControllerBase
         return Ok(new { Message = "Cuenta desbloqueada correctamente." });
     }
 
+    /// <summary>
+    /// Emergency reset password - requires secret token from appsettings.json
+    /// Use this when no admin can log in to reset passwords
+    /// </summary>
+    [HttpPost("emergency-reset")]
+    public async Task<ActionResult> EmergencyResetPassword([FromBody] EmergencyResetRequest request)
+    {
+        // Verify emergency token from configuration
+        var configToken = _configuration["Security:EmergencyResetToken"];
+        if (string.IsNullOrEmpty(configToken) || request.EmergencyToken != configToken)
+        {
+            await LogAuditAsync(null, "EMERGENCY_RESET_FAIL", "Auth", null, 
+                $"Intento de reset de emergencia fallido para usuario: {request.Username}", "FAIL");
+            return Unauthorized("Token de emergencia inválido.");
+        }
+
+        var user = await _context.Users.Include(u => u.Roles)
+            .FirstOrDefaultAsync(u => u.Username == request.Username);
+        
+        if (user == null)
+        {
+            return NotFound($"Usuario '{request.Username}' no encontrado.");
+        }
+
+        // Validate new password
+        var (isValid, errorMessage) = PasswordPolicy.Validate(request.NewPassword);
+        if (!isValid)
+        {
+            return BadRequest(errorMessage);
+        }
+
+        // Reset password and unlock account
+        user.PasswordHash = HashPassword(request.NewPassword);
+        user.PasswordChangedAt = DateTime.UtcNow;
+        user.FailedLoginAttempts = 0;
+        user.LockedUntil = null;
+        user.IsActive = true;
+        
+        await LogAuditAsync(null, "EMERGENCY_RESET_OK", "User", user.Id, 
+            $"Contraseña reseteada vía token de emergencia para: {request.Username}", "OK");
+        
+        await _context.SaveChangesAsync();
+
+        return Ok(new { Message = $"Contraseña de '{request.Username}' reseteada correctamente. La cuenta ha sido desbloqueada." });
+    }
+
+    /// <summary>
+    /// Purge all users and start fresh - requires emergency token
+    /// </summary>
+    [HttpPost("purge-and-reset")]
+    public async Task<ActionResult> PurgeAndReset([FromBody] PurgeAndResetRequest request)
+    {
+        // Verify emergency token
+        var configToken = _configuration["Security:EmergencyResetToken"];
+        if (string.IsNullOrEmpty(configToken) || request.EmergencyToken != configToken)
+        {
+            await LogAuditAsync(null, "PURGE_RESET_FAIL", "Auth", null, 
+                "Intento de purga fallido - token inválido", "FAIL");
+            return Unauthorized("Token de emergencia inválido.");
+        }
+
+        // Validate new admin password
+        var (isValid, errorMessage) = PasswordPolicy.Validate(request.AdminPassword);
+        if (!isValid)
+        {
+            return BadRequest(errorMessage);
+        }
+
+        // Delete all users and related data
+        _context.StaffAuthorizations.RemoveRange(_context.StaffAuthorizations);
+        _context.StaffCompetencyStatuses.RemoveRange(_context.StaffCompetencyStatuses);
+        _context.CompetencyEvaluations.RemoveRange(_context.CompetencyEvaluations);
+        _context.StaffTrainings.RemoveRange(_context.StaffTrainings);
+        _context.StaffProfiles.RemoveRange(_context.StaffProfiles);
+        _context.Users.RemoveRange(_context.Users);
+        
+        await _context.SaveChangesAsync();
+
+        // Ensure roles exist
+        if (!await _context.Roles.AnyAsync())
+        {
+            var roles = new List<Role>
+            {
+                new Role { Id = Guid.NewGuid(), RoleName = "Administrador", Description = "Acceso total" },
+                new Role { Id = Guid.NewGuid(), RoleName = "Consultor", Description = "Solo lectura" },
+                new Role { Id = Guid.NewGuid(), RoleName = "Staff", Description = "Acceso básico" }
+            };
+            _context.Roles.AddRange(roles);
+            await _context.SaveChangesAsync();
+        }
+
+        // Create new admin
+        var adminRole = await _context.Roles.FirstOrDefaultAsync(r => r.RoleName == "Administrador");
+        var newAdmin = new User
+        {
+            Id = Guid.NewGuid(),
+            Username = request.AdminUsername,
+            FullName = request.AdminFullName ?? "Administrador",
+            Email = request.AdminEmail ?? "",
+            PasswordHash = HashPassword(request.AdminPassword),
+            PasswordChangedAt = DateTime.UtcNow,
+            IsActive = true,
+            Roles = adminRole != null ? new List<Role> { adminRole } : new List<Role>()
+        };
+
+        _context.Users.Add(newAdmin);
+        
+        await LogAuditAsync(newAdmin.Id, "PURGE_AND_RESET", "System", null, 
+            $"Sistema purgado y reiniciado. Nuevo admin: {request.AdminUsername}", "OK");
+        
+        await _context.SaveChangesAsync();
+
+        return Ok(new { 
+            Message = $"Sistema reiniciado. Nuevo administrador '{request.AdminUsername}' creado.",
+            UserId = newAdmin.Id 
+        });
+    }
+
     [Authorize(Roles = "Administrador")]
     [HttpDelete("purge-users")]
     public async Task<ActionResult> PurgeUsers()
@@ -382,3 +500,11 @@ public class AuthController : ControllerBase
 // DTOs for new endpoints
 public record ResetPasswordRequest(string NewPassword);
 public record ChangePasswordRequest(string CurrentPassword, string NewPassword);
+public record EmergencyResetRequest(string EmergencyToken, string Username, string NewPassword);
+public record PurgeAndResetRequest(
+    string EmergencyToken, 
+    string AdminUsername, 
+    string AdminPassword, 
+    string? AdminFullName = null, 
+    string? AdminEmail = null
+);
