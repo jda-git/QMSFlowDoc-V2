@@ -111,6 +111,7 @@ public class AuthorizationsController : ControllerBase
         }
     }
 
+    [Authorize(Roles = "Administrador")]
     [HttpDelete("{id}")]
     public async Task<IActionResult> DeleteAuthorization(Guid id)
     {
@@ -119,18 +120,30 @@ public class AuthorizationsController : ControllerBase
             var auth = await _context.StaffAuthorizations.FindAsync(id);
             if (auth == null) return NotFound();
 
-            // Audit log
-            var userIdStr = User.FindFirstValue(ClaimTypes.NameIdentifier);
-            Console.WriteLine($"[AUDIT] User {userIdStr} deleted authorization {id} at {DateTime.UtcNow}");
+            // Soft-delete: Set Status to REVOCADA instead of physical delete (ISO 15189 compliance)
+            auth.Status = "REVOCADA";
+            auth.RevocationReason = "Eliminado por administrador";
+            auth.UpdatedAt = DateTime.UtcNow;
+            
+            // Audit log to database
+            var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+            _context.AuditLogs.Add(new QMSFlowDoc.Shared.Models.AuditLog
+            {
+                Action = "DELETE",
+                EntityType = "StaffAuthorization",
+                EntityId = id,
+                UserId = userId != null ? Guid.Parse(userId) : null,
+                UserName = User.Identity?.Name ?? "Unknown",
+                Details = $"Autorización revocada por administrador",
+                Result = "OK"
+            });
 
-            _context.StaffAuthorizations.Remove(auth);
             await _context.SaveChangesAsync();
 
             return NoContent();
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"Error deleting authorization: {ex.Message}");
             return StatusCode(500, $"Error al eliminar autorización: {ex.Message}");
         }
     }

@@ -160,23 +160,39 @@ public class StaffController : ControllerBase
         }
     }
 
+    [Authorize(Roles = "Administrador")]
     [HttpDelete("{id}")]
     public async Task<IActionResult> DeleteStaffProfile(Guid id)
     {
         var profile = await _context.StaffProfiles.FindAsync(id);
         if (profile == null) return NotFound();
 
-        // If it has an associated user, we might want to delete it too or just disassociate
+        // Soft-delete: Set IsActive = false instead of physical delete (ISO 15189 compliance)
+        profile.IsActive = false;
+        
+        // Also deactivate associated user if exists
         if (profile.UserId.HasValue)
         {
             var user = await _context.Users.FindAsync(profile.UserId.Value);
             if (user != null)
             {
-                _context.Users.Remove(user);
+                user.IsActive = false;
             }
         }
+        
+        // Audit log
+        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        _context.AuditLogs.Add(new QMSFlowDoc.Shared.Models.AuditLog
+        {
+            Action = "DELETE",
+            EntityType = "StaffProfile",
+            EntityId = id,
+            UserId = userId != null ? Guid.Parse(userId) : null,
+            UserName = User.Identity?.Name ?? "Unknown",
+            Details = $"Perfil de personal marcado como inactivo",
+            Result = "OK"
+        });
 
-        _context.StaffProfiles.Remove(profile);
         await _context.SaveChangesAsync();
 
         return NoContent();
@@ -245,6 +261,7 @@ public class StaffController : ControllerBase
         }
     }
 
+    [Authorize(Roles = "Administrador")]
     [HttpDelete("training/{id}")]
     public async Task<IActionResult> DeleteTraining(Guid id)
     {
@@ -253,18 +270,29 @@ public class StaffController : ControllerBase
             var training = await _context.StaffTrainings.FindAsync(id);
             if (training == null) return NotFound();
 
-            // Audit log
-            var userIdStr = User.FindFirstValue(ClaimTypes.NameIdentifier);
-            Console.WriteLine($"[AUDIT] User {userIdStr} deleted training {id} at {DateTime.UtcNow}");
+            // Soft-delete: Set Status to ANULADO instead of physical delete (ISO 15189 compliance)
+            training.Status = "ANULADO";
+            training.AnnulReason = "Eliminado por administrador";
+            
+            // Audit log to database
+            var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+            _context.AuditLogs.Add(new QMSFlowDoc.Shared.Models.AuditLog
+            {
+                Action = "DELETE",
+                EntityType = "StaffTraining",
+                EntityId = id,
+                UserId = userId != null ? Guid.Parse(userId) : null,
+                UserName = User.Identity?.Name ?? "Unknown",
+                Details = $"Registro de formación marcado como anulado",
+                Result = "OK"
+            });
 
-            _context.StaffTrainings.Remove(training);
             await _context.SaveChangesAsync();
 
             return NoContent();
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"Error deleting training: {ex.Message}");
             return StatusCode(500, $"Error al eliminar formación: {ex.Message}");
         }
     }
