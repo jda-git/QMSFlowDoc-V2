@@ -87,12 +87,12 @@ public class AuthService : IAuthService
             var localStore = await GetLocalStoreAsync();
             var (success, userId, fullName, role) = await localStore.ValidateUserAsync(username, password);
             
-            if (success)
+            if (success && userId != null)
             {
                 CurrentToken = $"local_{userId}"; // Pseudo-token for local mode
                 CurrentUsername = username;
                 CurrentUserId = Guid.Parse(userId);
-                CurrentRoles = new List<string> { role };
+                CurrentRoles = new List<string> { role ?? "Usuario" };
                 return true;
             }
         }

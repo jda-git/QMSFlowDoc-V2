@@ -26,7 +26,6 @@ public class StaffService : IStaffService
     private readonly HttpClient _httpClient;
     private LocalDocumentStore? _localStore;
     private readonly NetworkConfigStore _networkConfig;
-    private bool _useLocalMode = false;
 
     public StaffService(HttpClient httpClient, LocalDocumentStore? localStore = null, NetworkConfigStore? networkConfig = null)
     {

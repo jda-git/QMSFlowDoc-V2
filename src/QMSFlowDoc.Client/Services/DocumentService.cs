@@ -276,20 +276,21 @@ public class DocumentService : IDocumentService
         {
             // For local mode, we reuse CreateDocumentWithFileAsync logic which handles archival
             // We need to fetch the existing document metadata first
-            var doc = await _localStore.GetDocumentByIdAsync(id);
+            var store = await GetLocalStoreAsync();
+            var doc = await store.GetDocumentByIdAsync(id);
             if (doc == null) return false;
 
             var folderName = "General";
             if (doc.FolderId.HasValue)
             {
-                var folders = await _localStore.GetFoldersAsync();
+                var folders = await store.GetFoldersAsync();
                 folderName = folders.FirstOrDefault(f => f.Id == doc.FolderId.Value)?.Name ?? "General";
             }
 
             var typeId = doc.DocumentTypeId;
             var versionLabel = doc.Versions?.FirstOrDefault(v => v.IsCurrent)?.VersionLabel ?? "v1.0";
 
-            var result = await _localStore.CreateDocumentWithFileAsync(
+            var result = await store.CreateDocumentWithFileAsync(
                 doc.DocCode,
                 doc.Title,
                 doc.Status,

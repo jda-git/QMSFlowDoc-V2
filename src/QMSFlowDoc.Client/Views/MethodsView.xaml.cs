@@ -40,14 +40,14 @@ public sealed partial class MethodsView : Page
             if (MethodList != null) MethodList.Opacity = 0.5;
 
             var methods = await _methodService.GetMethodsAsync();
-            MethodList.ItemsSource = methods;
+            if (MethodList != null) MethodList.ItemsSource = methods;
 
             if (_selectedMethod != null)
             {
                 var reselect = methods.FirstOrDefault(m => m.Id == _selectedMethod.Id);
                 if (reselect != null)
                 {
-                    MethodList.SelectedItem = reselect;
+                    if (MethodList != null) MethodList.SelectedItem = reselect;
                 }
             }
         }

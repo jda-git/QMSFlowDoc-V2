@@ -42,6 +42,8 @@ public partial class App : Application
     public Services.AuditLogger EquipmentAuditLogger { get; }
     public Services.NetworkConfigStore NetworkConfigStore { get; } = new Services.NetworkConfigStore();
     public Services.LocalConfigStore LocalConfigStore { get; } = new Services.LocalConfigStore();
+    public Services.Sync.NetworkSyncService NetworkSyncService { get; }
+    public Services.SyncAgent SyncAgent { get; }
     
     // Core Data Store
     public Services.LocalDocumentStore LocalStore { get; }
@@ -52,7 +54,6 @@ public partial class App : Application
 
     public static Microsoft.UI.Xaml.Window? MainWindowInstance { get; set; }
 
-    private System.Threading.Timer? _syncTimer;
 
 
 
@@ -94,7 +95,12 @@ public partial class App : Application
         AuditLogger = new Services.Sync.AuditLogger();
         
         var localDocsPath = System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "QMSFlowDoc", "Files");
+        var localDbPath = System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "QMSFlowDoc");
+        
         DriveSyncEngine = new Services.Sync.SyncEngine(SnapshotStore, DriveProvider, SyncLogger, AuditLogger, localDocsPath);
+        
+        NetworkSyncService = new Services.Sync.NetworkSyncService(NetworkConfigStore, localDbPath, localDocsPath);
+        SyncAgent = new Services.SyncAgent(NetworkSyncService);
         
         // Init Document Management Services
         PdfWatermarkService = new Services.Documents.PdfWatermarkService();
@@ -138,15 +144,8 @@ public partial class App : Application
             }
             catch { /* Not configured or network down */ }
             
-            // Load Drive Folder ID from local configuration (no authentication required)
-            var driveFolderId = await LocalConfigStore.GetDriveFolderIdAsync();
-            if (!string.IsNullOrWhiteSpace(driveFolderId))
-            {
-                DriveSyncEngine.DriveFolderId = driveFolderId;
-            }
-            
-            // Start Sync Loop (every 5 mins) - will skip if DriveFolderId not configured
-            _syncTimer = new System.Threading.Timer(async _ => await DriveSyncEngine.RunSyncAsync(), null, TimeSpan.FromSeconds(10), TimeSpan.FromMinutes(5));
+            // Start Sync Loop via SyncAgent (internally managed)
+            // _syncTimer created in SyncAgent constructor auto-starts.
 
             Window = new MainWindow();
             MainWindowInstance = Window;

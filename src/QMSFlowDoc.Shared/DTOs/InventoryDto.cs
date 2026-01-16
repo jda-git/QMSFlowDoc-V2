@@ -46,9 +46,9 @@ public class LotSummaryDto
 {
     public Guid Id { get; set; }
     public string LotNumber { get; set; } = string.Empty;
-    public DateTime ExpiryDate { get; set; }
+    public DateTime? ExpiryDate { get; set; }
     public decimal Qty { get; set; }
-    public string FormattedString => $"LOTE:{LotNumber} FECHA:{ExpiryDate:MM/yy} CANT:{Qty}";
+    public string FormattedString => $"LOTE:{LotNumber} FECHA:{(ExpiryDate.HasValue ? ExpiryDate.Value.ToString("MM/yy") : "N/A")} CANT:{Qty}";
 }
 
 public record CreateReagentRequest(

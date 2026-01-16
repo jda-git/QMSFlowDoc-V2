@@ -60,3 +60,57 @@ public record EQAResultDto(
     decimal? Score,
     string? Notes
 );
+
+public record EQAProviderDto(
+    Guid Id,
+    string Name,
+    string? Code,
+    string? ContactInfo,
+    bool IsActive
+);
+
+public record EQASchemeDto(
+    Guid Id,
+    Guid ProviderId,
+    string ProviderName,
+    string Name,
+    string? Matrix,
+    string? Periodicity,
+    Guid? ResponsibleUserId,
+    string? Notes
+);
+
+public record EQARoundDto(
+    Guid Id,
+    Guid SchemeId,
+    string SchemeName,
+    string RoundCode,
+    int Year,
+    DateTime? DateReceived,
+    DateTime? DateAnalysis,
+    DateTime? DateDeadline,
+    DateTime? DateSubmitted,
+    DateTime? DateReportReceived,
+    DateTime? DateClosed,
+    string Status, // OPEN, CLOSED, REVIEWED
+    string? FolderPath,
+    string? Notes,
+    Guid? ReviewerUserId,
+    string? ReviewerName,
+    DateTime? ReviewDate
+);
+
+public record EQARoundResultDto(
+    Guid Id,
+    Guid RoundId,
+    string? ParameterName,
+    string? ResultValue,
+    string? Unit,
+    string? TargetValue,
+    string? Deviation,
+    double? ZScore,
+    string? Performance,
+    decimal? Score,
+    string? Notes,
+    string? InternalStatus
+);

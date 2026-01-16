@@ -310,7 +310,7 @@ public sealed partial class InventoryView : Page
         }
     }
 
-    private async Task LogInventoryAction(string op, ReagentListDto reagent, decimal qty, string lot, DateTime expiry)
+    private async Task LogInventoryAction(string op, ReagentListDto reagent, decimal qty, string lot, DateTime? expiry)
     {
         try
         {
@@ -330,7 +330,7 @@ public sealed partial class InventoryView : Page
                 if (!exists) 
                     await sw.WriteLineAsync("FechaLog,Operacion,Reactivo,Fluorescencia,Cantidad,Lote,Caducidad,Usuario");
                 
-                var line = $"{DateTime.Now:dd/MM/yyyy HH:mm:ss},{op},\"{reagent.Name}\",\"{reagent.Fluorescence}\",{qty},\"{lot}\",{expiry:MM/yy},\"{userName}\"";
+                var line = $"{DateTime.Now:dd/MM/yyyy HH:mm:ss},{op},\"{reagent.Name}\",\"{reagent.Fluorescence}\",{qty},\"{lot}\",{(expiry.HasValue ? expiry.Value.ToString("MM/yy") : "N/A")},\"{userName}\"";
                 await sw.WriteLineAsync(line);
             }
         }

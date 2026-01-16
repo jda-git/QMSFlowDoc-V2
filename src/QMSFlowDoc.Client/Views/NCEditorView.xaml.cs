@@ -26,7 +26,27 @@ public sealed partial class NCEditorView : Page
             _ncId = id;
             await LoadNC(id);
         }
+        else if (e.Parameter is NCEditorParameter param)
+        {
+            if (param.IncidentId.HasValue)
+            {
+                _ncId = param.IncidentId.Value;
+                await LoadNC(_ncId.Value);
+            }
+            else
+            {
+                TitleBox.Text = param.DefaultTitle ?? "";
+                DescriptionBox.Text = param.DefaultDescription ?? "";
+                
+                // Try to set Origin
+                if (!string.IsNullOrEmpty(param.DefaultOrigin))
+                {
+                    OriginCombo.Text = param.DefaultOrigin;
+                }
+            }
+        }
     }
+    
 
     private System.Collections.ObjectModel.ObservableCollection<CapaAction> Actions { get; set; } = new();
 
@@ -208,4 +228,12 @@ public sealed partial class NCEditorView : Page
             }
         }
     }
+}
+
+public class NCEditorParameter
+{
+    public Guid? IncidentId { get; set; }
+    public string? DefaultTitle { get; set; }
+    public string? DefaultDescription { get; set; }
+    public string? DefaultOrigin { get; set; }
 }

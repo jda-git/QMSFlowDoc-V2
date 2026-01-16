@@ -51,7 +51,7 @@ public class StaffTraining
     public TrainingActivity? TrainingActivity { get; set; }
     
     public string ParticipationRole { get; set; } = "ASISTENTE"; // ASISTENTE, PONENTE
-    public string Result { get; set; } = "APTO"; // APTO, NO_APTO
+    public string? Result { get; set; } = "APTO"; // APTO, NO_APTO
     public string? Score { get; set; }
     
     public DateTime? CompletionDate { get; set; }

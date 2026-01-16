@@ -31,7 +31,6 @@ public class SyncScheduler : IDisposable
     private readonly SemaphoreSlim _semaphore = new(1, 1);
 
     public event Action<SyncResult>? SyncCompleted;
-    public event Action<bool>? NetworkStatusChanged;
 
     public bool IsRunning => _isRunning;
     public DateTime? LastSyncTime { get; private set; }

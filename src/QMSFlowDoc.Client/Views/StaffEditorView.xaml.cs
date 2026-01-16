@@ -127,7 +127,7 @@ public sealed partial class StaffEditorView : Page
             try
             {
                 var req = new RegisterTrainingRequest(
-                    _staffId.Value,
+                    (_staffId ?? Guid.Empty),
                     dialog.TrainingTitle,
                     dialog.Provider,
                     dialog.Hours,
@@ -142,7 +142,7 @@ public sealed partial class StaffEditorView : Page
                 if (success)
                 {
                     // Refresh training list
-                    await LoadStaffDetails(_staffId.Value);
+                    await LoadStaffDetails((_staffId ?? Guid.Empty));
                     ErrorText.Visibility = Visibility.Collapsed;
                 }
                 else
@@ -178,7 +178,7 @@ public sealed partial class StaffEditorView : Page
             try
             {
                 var req = new AssessCompetencyRequest(
-                    _staffId.Value,
+                    (_staffId ?? Guid.Empty),
                     dialog.CompetencyName,
                     dialog.Area,
                     dialog.Outcome,
@@ -194,7 +194,7 @@ public sealed partial class StaffEditorView : Page
                 if (result != null)
                 {
                     // Refresh
-                    CompetencyList.ItemsSource = await app.CompetencyService.GetStaffEvaluationsAsync(_staffId.Value);
+                    CompetencyList.ItemsSource = await app.CompetencyService.GetStaffEvaluationsAsync((_staffId ?? Guid.Empty));
                     ErrorText.Visibility = Visibility.Collapsed;
                 }
             }
@@ -225,7 +225,7 @@ public sealed partial class StaffEditorView : Page
             try
             {
                 var req = new GrantAuthorizationRequest(
-                    _staffId.Value,
+                    (_staffId ?? Guid.Empty),
                     dialog.TaskName,
                     dialog.Description,
                     dialog.ValidFrom,
@@ -264,7 +264,7 @@ public sealed partial class StaffEditorView : Page
                 if (success)
                 {
                     // Refresh
-                    AuthorizationList.ItemsSource = await app.AuthorizationService.GetStaffAuthorizationsAsync(_staffId.Value);
+                    AuthorizationList.ItemsSource = await app.AuthorizationService.GetStaffAuthorizationsAsync((_staffId ?? Guid.Empty));
                     ErrorText.Visibility = Visibility.Collapsed;
                 }
             }
@@ -308,7 +308,7 @@ public sealed partial class StaffEditorView : Page
             {
                 // UPDATE
                 var updateRequest = new UpdateStaffProfileRequest(
-                    _staffId.Value,
+                    (_staffId ?? Guid.Empty),
                     FullNameBox.Text,
                     EmailBox.Text,
                     PositionBox.Text,
@@ -399,7 +399,7 @@ public sealed partial class StaffEditorView : Page
                  {
                      // Register updated record
                      var req = new RegisterTrainingRequest(
-                        _staffId.Value,
+                        (_staffId ?? Guid.Empty),
                         dialog.TrainingTitle,
                         dialog.Provider,
                         dialog.Hours,
@@ -408,7 +408,7 @@ public sealed partial class StaffEditorView : Page
                         dialog.Notes
                      );
                      await app.StaffService.RegisterTrainingAsync(req);
-                     await LoadStaffDetails(_staffId.Value);
+                     await LoadStaffDetails((_staffId ?? Guid.Empty));
                  }
                  else
                  {
@@ -422,7 +422,7 @@ public sealed partial class StaffEditorView : Page
                  bool deleted = await app.StaffService.DeleteTrainingAsync(id);
                  if (deleted)
                  {
-                     await LoadStaffDetails(_staffId.Value);
+                     await LoadStaffDetails((_staffId ?? Guid.Empty));
                  }
                  else
                  {
@@ -455,7 +455,7 @@ public sealed partial class StaffEditorView : Page
                  if (deleted)
                  {
                      var req = new AssessCompetencyRequest(
-                        _staffId.Value,
+                        (_staffId ?? Guid.Empty),
                         dialog.CompetencyName,
                         dialog.Area,
                         dialog.Outcome,
@@ -466,7 +466,7 @@ public sealed partial class StaffEditorView : Page
                      );
                      await app.StaffService.AssessCompetencyAsync(req);
                      // Refresh
-                     CompetencyList.ItemsSource = await app.CompetencyService.GetStaffEvaluationsAsync(_staffId.Value);
+                     CompetencyList.ItemsSource = await app.CompetencyService.GetStaffEvaluationsAsync((_staffId ?? Guid.Empty));
                  }
                  else
                  {
@@ -480,7 +480,7 @@ public sealed partial class StaffEditorView : Page
                  bool deleted = await app.CompetencyService.DeleteEvaluationAsync(id);
                  if (deleted)
                  {
-                     CompetencyList.ItemsSource = await app.CompetencyService.GetStaffEvaluationsAsync(_staffId.Value);
+                     CompetencyList.ItemsSource = await app.CompetencyService.GetStaffEvaluationsAsync((_staffId ?? Guid.Empty));
                  }
                  else
                  {
@@ -513,7 +513,7 @@ public sealed partial class StaffEditorView : Page
                  if (deleted)
                  {
                      var req = new GrantAuthorizationRequest(
-                        _staffId.Value,
+                        (_staffId ?? Guid.Empty),
                         dialog.TaskName,
                         dialog.Description,
                         dialog.ValidFrom,
@@ -553,7 +553,7 @@ public sealed partial class StaffEditorView : Page
 
                      await app.AuthorizationService.GrantAuthorizationAsync(req);
                      // Refresh
-                     AuthorizationList.ItemsSource = await app.AuthorizationService.GetStaffAuthorizationsAsync(_staffId.Value);
+                     AuthorizationList.ItemsSource = await app.AuthorizationService.GetStaffAuthorizationsAsync((_staffId ?? Guid.Empty));
                  }
                  else
                  {
@@ -567,7 +567,7 @@ public sealed partial class StaffEditorView : Page
                  bool deleted = await app.AuthorizationService.DeleteAuthorizationAsync(id);
                  if (deleted)
                  {
-                     AuthorizationList.ItemsSource = await app.AuthorizationService.GetStaffAuthorizationsAsync(_staffId.Value);
+                     AuthorizationList.ItemsSource = await app.AuthorizationService.GetStaffAuthorizationsAsync((_staffId ?? Guid.Empty));
                  }
                  else
                  {
@@ -591,7 +591,14 @@ public sealed partial class StaffEditorView : Page
         try
         {
             var app = (App)Application.Current;
-            var profile = await app.StaffService.GetStaffProfileByIdAsync(_staffId.Value);
+            var profile = await app.StaffService.GetStaffProfileByIdAsync((_staffId ?? Guid.Empty));
+            if (profile == null)
+            {
+                ErrorText.Text = "No se pudo encontrar el expediente para imprimir.";
+                ErrorText.Visibility = Visibility.Visible;
+                return;
+            }
+
             var competencies = CompetencyList.ItemsSource as System.Collections.Generic.List<CompetencyEvaluationDto> ?? new System.Collections.Generic.List<CompetencyEvaluationDto>();
             var authorizations = AuthorizationList.ItemsSource as System.Collections.Generic.List<StaffAuthorizationDto> ?? new System.Collections.Generic.List<StaffAuthorizationDto>();
 

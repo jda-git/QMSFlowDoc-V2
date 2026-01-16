@@ -1,23 +1,19 @@
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Navigation;
-using Microsoft.UI.Xaml.Data;
-using Microsoft.UI.Xaml.Input;
 using System;
-using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using QMSFlowDoc.Client.Services;
 using QMSFlowDoc.Shared.DTOs;
 using QMSFlowDoc.Shared.Models;
-using QMSFlowDoc.Client.Views.Dialogs;
 
 namespace QMSFlowDoc.Client.Views;
 
 public sealed partial class EQAView : Page
 {
     private readonly IEQAService _eqaService;
-    private EQAProgramDto? _selectedProgram;
+    private EQASchemeDto? _selectedScheme;
 
     public EQAView()
     {
@@ -28,313 +24,143 @@ public sealed partial class EQAView : Page
     protected override async void OnNavigatedTo(NavigationEventArgs e)
     {
         base.OnNavigatedTo(e);
-        await LoadProgramsAsync();
+        await LoadSchemesAsync();
     }
 
-    private async Task LoadProgramsAsync()
+    private async Task LoadSchemesAsync()
     {
         try
         {
-            var programs = await _eqaService.GetProgramsAsync();
-            ProgramList.ItemsSource = programs;
+            var schemes = await _eqaService.GetSchemesAsync();
+            SchemeList.ItemsSource = schemes;
 
-            if (_selectedProgram != null)
+            if (_selectedScheme != null)
             {
-                // Re-select if exists
-                var reselect = programs.FirstOrDefault(p => p.Id == _selectedProgram.Id);
+                var reselect = schemes.FirstOrDefault(s => s.Id == _selectedScheme.Id);
                 if (reselect != null)
                 {
-                    ProgramList.SelectedItem = reselect;
+                    SchemeList.SelectedItem = reselect;
                 }
             }
         }
         catch (Exception ex)
         {
-            await ShowErrorAsync("Error cargando programas", ex.Message);
+            await ShowErrorAsync("Error cargando esquemas", ex.Message);
         }
     }
 
-    private async void ProgramList_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    private void Configuration_Click(object sender, RoutedEventArgs e)
     {
-        if (ProgramList.SelectedItem is EQAProgramDto program)
+        Frame.Navigate(typeof(EQAConfigurationView));
+    }
+
+    private async void SchemeList_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (SchemeList.SelectedItem is EQASchemeDto scheme)
         {
-            _selectedProgram = program;
+            _selectedScheme = scheme;
             DetailPane.Visibility = Visibility.Visible;
             EmptySelectionPane.Visibility = Visibility.Collapsed;
             
             // Bind Header
-            DetailTitle.Text = program.Name;
-            DetailProvider.Text = $"{program.Provider} • {program.Frequency}";
+            DetailTitle.Text = scheme.Name;
+            DetailProvider.Text = $"{scheme.ProviderName} • {scheme.Periodicity ?? "Sin frecuencia"}";
 
-            await LoadResultsAsync(program.Id);
+            await LoadRoundsAsync(scheme.Id);
         }
         else
         {
-            _selectedProgram = null;
+            _selectedScheme = null;
             DetailPane.Visibility = Visibility.Collapsed;
             EmptySelectionPane.Visibility = Visibility.Visible;
         }
     }
 
-    private async Task LoadResultsAsync(Guid programId)
+    private async Task LoadRoundsAsync(Guid schemeId)
     {
         try
         {
-            var results = await _eqaService.GetResultsAsync(programId);
-            ResultsList.ItemsSource = results;
-            EmptyResultsText.Visibility = results.Any() ? Visibility.Collapsed : Visibility.Visible;
+            var rounds = await _eqaService.GetRoundsAsync(schemeId);
+            RoundsList.ItemsSource = rounds;
+            EmptyRoundsText.Visibility = rounds.Any() ? Visibility.Collapsed : Visibility.Visible;
         }
         catch (Exception ex)
         {
-            await ShowErrorAsync("Error cargando resultados", ex.Message);
+            await ShowErrorAsync("Error cargando rondas", ex.Message);
         }
     }
 
-    private async void AddProgram_Click(object sender, RoutedEventArgs e)
+    private async void AddRound_Click(object sender, RoutedEventArgs e)
     {
-        // Simple input dialog for MVP
+        if (_selectedScheme == null) return;
+
+        var codeBox = new TextBox { Header = "Código de Ronda / Ciclo", PlaceholderText = "Ej. 2024-C1" };
+        var datePicker = new DatePicker { Header = "Fecha de Recepción", Date = DateTime.Now };
+        var notesBox = new TextBox { Header = "Notas", AcceptsReturn = true, Height = 60 };
+
+        var stack = new StackPanel { Spacing = 12 };
+        stack.Children.Add(codeBox);
+        stack.Children.Add(datePicker);
+        stack.Children.Add(notesBox);
+
         var dialog = new ContentDialog
         {
-            Title = "Nuevo Programa EQA",
+            Title = "Registrar Nueva Ronda",
             PrimaryButtonText = "Crear",
             CloseButtonText = "Cancelar",
             DefaultButton = ContentDialogButton.Primary,
+            Content = stack,
             XamlRoot = this.Content.XamlRoot
         };
 
-        var stack = new StackPanel { Spacing = 12 };
-        var nameBox = new TextBox { Header = "Nombre del Programa", PlaceholderText = "Ej. Hematología Ciclo 1" };
-        var providerBox = new TextBox { Header = "Proveedor", PlaceholderText = "Ej. RIQAS, SECAL" };
-        var freqBox = new ComboBox { Header = "Frecuencia", HorizontalAlignment = HorizontalAlignment.Stretch };
-        freqBox.Items.Add("Mensual");
-        freqBox.Items.Add("Trimestral");
-        freqBox.Items.Add("Semestral");
-        freqBox.SelectedIndex = 0;
-
-        stack.Children.Add(nameBox);
-        stack.Children.Add(providerBox);
-        stack.Children.Add(freqBox);
-        dialog.Content = stack;
-
-        var result = await dialog.ShowAsync();
-        if (result == ContentDialogResult.Primary)
+        if (await dialog.ShowAsync() == ContentDialogResult.Primary)
         {
-            if (string.IsNullOrWhiteSpace(nameBox.Text)) return;
-
-            var req = new CreateEQAProgramRequest(nameBox.Text, providerBox.Text, freqBox.SelectedItem?.ToString(), null);
-            await _eqaService.CreateProgramAsync(req);
-            await LoadProgramsAsync();
-        }
-    }
-
-    private async void EditProgram_Click(object sender, RoutedEventArgs e)
-    {
-        if (_selectedProgram == null) return;
-        
-        // Similar to Add but pre-filled
-        var dialog = new ContentDialog
-        {
-            Title = "Editar Programa",
-            PrimaryButtonText = "Guardar",
-            CloseButtonText = "Cancelar",
-            DefaultButton = ContentDialogButton.Primary,
-            XamlRoot = this.Content.XamlRoot
-        };
-
-        var stack = new StackPanel { Spacing = 12 };
-        var nameBox = new TextBox { Header = "Nombre", Text = _selectedProgram.Name };
-        var providerBox = new TextBox { Header = "Proveedor", Text = _selectedProgram.Provider ?? "" };
-        var freqBox = new ComboBox { Header = "Frecuencia", HorizontalAlignment = HorizontalAlignment.Stretch };
-        freqBox.Items.Add("Mensual");
-        freqBox.Items.Add("Trimestral");
-        freqBox.Items.Add("Semestral");
-        freqBox.SelectedItem = _selectedProgram.Frequency;
-
-        stack.Children.Add(nameBox);
-        stack.Children.Add(providerBox);
-        stack.Children.Add(freqBox);
-        dialog.Content = stack;
-
-        var result = await dialog.ShowAsync();
-        if (result == ContentDialogResult.Primary)
-        {
-            var req = new UpdateEQAProgramRequest(
-                _selectedProgram.Id, 
-                nameBox.Text, 
-                providerBox.Text, 
-                freqBox.SelectedItem?.ToString(), 
-                _selectedProgram.Status, 
-                null // Notes not in MVP DTO
-            );
-            await _eqaService.UpdateProgramAsync(req);
-            await LoadProgramsAsync();
-        }
-    }
-
-    private async void DeleteProgram_Click(object sender, RoutedEventArgs e)
-    {
-         if (_selectedProgram == null) return;
-
-         var dialog = new ContentDialog
-         {
-             Title = "¿Eliminar programa?",
-             Content = $"Se eliminará el programa '{_selectedProgram.Name}' y todos sus resultados. Esta acción no se puede deshacer.",
-             PrimaryButtonText = "Eliminar",
-             CloseButtonText = "Cancelar",
-             DefaultButton = ContentDialogButton.Close,
-             XamlRoot = this.Content.XamlRoot
-         };
-
-         if (await dialog.ShowAsync() == ContentDialogResult.Primary)
-         {
-             // Implement Deletion in Service (Missing in Interface/Service! - MVP gap, assume archival or status update)
-             // For now, let's just mark Inactive or skip
-             // Actually I'll update status to Archived
-             var req = new UpdateEQAProgramRequest(_selectedProgram.Id, _selectedProgram.Name, _selectedProgram.Provider, _selectedProgram.Frequency, EQAStatus.ARCHIVED, null);
-             await _eqaService.UpdateProgramAsync(req);
-             await LoadProgramsAsync();
-         }
-    }
-
-    private async void AddResult_Click(object sender, RoutedEventArgs e)
-    {
-        if (_selectedProgram == null) return;
-
-        // Using simple dialog for MVP Result Input
-        var dialog = new ContentDialog
-        {
-            Title = "Registrar Resultado",
-            PrimaryButtonText = "Guardar",
-            CloseButtonText = "Cancelar",
-            DefaultButton = ContentDialogButton.Primary,
-            XamlRoot = this.Content.XamlRoot
-        };
-
-        var stack = new StackPanel { Spacing = 12 };
-        var cycleBox = new TextBox { Header = "Identificador de Ciclo", PlaceholderText = "Ej. 2024-05" };
-        var datePicker = new DatePicker { Header = "Fecha de Envío" };
-        
-        stack.Children.Add(cycleBox);
-        stack.Children.Add(datePicker);
-        
-        dialog.Content = stack;
-
-        var result = await dialog.ShowAsync();
-        if (result == ContentDialogResult.Primary)
-        {
-             var programId = _selectedProgram.Id;
-             var req = new RegisterEQAResultRequest(
-                 programId,
-                 cycleBox.Text,
-                 null, null,
-                 datePicker.Date.DateTime,
-                 null
-             );
-             await _eqaService.RegisterResultAsync(req);
-             await LoadProgramsAsync(); // Refresh stats
-             await LoadResultsAsync(programId);
-        }
-    }
-
-    private async void ExportPdf_Click(object sender, RoutedEventArgs e)
-    {
-        if (_selectedProgram == null) return;
-        try
-        {
-            var results = await _eqaService.GetResultsAsync(_selectedProgram.Id);
-            var exportService = ((App)Application.Current).ExportService;
-            await exportService.ExportEqaReportToPdfAsync(results, _selectedProgram.Name);
-        }
-        catch (Exception ex)
-        {
-            await ShowErrorAsync("Error exportando PDF", ex.Message);
-        }
-    }
-
-    private async void EvaluateResult_Click(object sender, RoutedEventArgs e)
-    {
-        if (sender is MenuFlyoutItem item)
-        {
-            var result = item.Tag as EQAResultDto ?? item.DataContext as EQAResultDto;
-            if (result != null)
+            try
             {
-            var dialog = new ContentDialog
-            {
-                Title = "Evaluar Desempeño",
-                PrimaryButtonText = "Guardar",
-                CloseButtonText = "Cancelar",
-                DefaultButton = ContentDialogButton.Primary,
-                XamlRoot = this.Content.XamlRoot
-            };
+                if (string.IsNullOrWhiteSpace(codeBox.Text)) return;
 
-            var stack = new StackPanel { Spacing = 12 };
-            
-            // Performance ComboBox
-            var perfBox = new ComboBox 
-            { 
-                Header = "Desempeño", 
-                HorizontalAlignment = HorizontalAlignment.Stretch,
-                ItemsSource = Enum.GetValues(typeof(EQAPerformance)).Cast<EQAPerformance>().ToList()
-            };
-            
-            // Try parse existing performance string or default
-            if (Enum.TryParse<EQAPerformance>(result.Performance, true, out var currentPerf))
-                perfBox.SelectedItem = currentPerf;
-            else
-                perfBox.SelectedItem = EQAPerformance.NOT_EVALUATED;
-
-            // Score Box
-            var scoreBox = new TextBox 
-            { 
-                Header = "Puntuación", 
-                PlaceholderText = "0-100",
-                InputScope = new InputScope { Names = { new InputScopeName(InputScopeNameValue.Number) } },
-                Text = result.Score?.ToString() ?? "" 
-            };
-
-            // Notes Box
-            var notesBox = new TextBox 
-            { 
-                Header = "Notas", 
-                AcceptsReturn = true, 
-                Height = 80 
-            };
-
-            stack.Children.Add(perfBox);
-            stack.Children.Add(scoreBox);
-            stack.Children.Add(notesBox);
-
-            dialog.Content = stack;
-
-            if (await dialog.ShowAsync() == ContentDialogResult.Primary)
-            {
-                decimal? score = null;
-                if (decimal.TryParse(scoreBox.Text, out var s)) score = s;
-
-                var req = new UpdateEQAResultRequest(
-                    result.Id,
-                    EQAResultStatus.EVALUATED,
-                    score,
-                    (EQAPerformance)(perfBox.SelectedItem ?? EQAPerformance.NOT_EVALUATED),
-                    notesBox.Text,
-                    null, null
+                var newRound = new EQARoundDto(
+                    Guid.NewGuid(),
+                    _selectedScheme.Id,
+                    _selectedScheme.Name,
+                    codeBox.Text,
+                    DateTime.Now.Year,
+                    datePicker.Date.DateTime,
+                    null, null, null, null, null,
+                    "OPEN",
+                    null,
+                    string.IsNullOrWhiteSpace(notesBox.Text) ? null : notesBox.Text,
+                    null, null, null
                 );
 
-                await _eqaService.UpdateResultAsync(req);
-                
-                var programId = _selectedProgram?.Id ?? result.ProgramId;
-                await LoadProgramsAsync(); // Refresh stats on left pane
-                
-                // If the selected program is still the same (it should be), refresh list
-                if (_selectedProgram != null && _selectedProgram.Id == programId)
-                {
-                     await LoadResultsAsync(programId);
-                }
+                await _eqaService.UpsertRoundAsync(newRound);
+                await LoadRoundsAsync(_selectedScheme.Id);
+            }
+            catch (Exception ex)
+            {
+                await ShowErrorAsync("Error al registrar ronda", ex.Message);
             }
         }
     }
-}
 
+    private async void ViewRoundResults_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            if (sender is Button btn && btn.Tag is EQARoundDto round)
+            {
+                Frame.Navigate(typeof(EQARoundDetailsView), round.Id);
+            }
+            else
+            {
+                await ShowErrorAsync("Debug Info", $"Button Tag is null or not EQARoundDto. Sender: {sender?.GetType().Name}");
+            }
+        }
+        catch (Exception ex)
+        {
+            await ShowErrorAsync("Error de Navegación", $"No se pudo abrir los detalles de la ronda: {ex.Message}");
+        }
+    }
 
     private async Task ShowErrorAsync(string title, string message)
     {
@@ -349,21 +175,4 @@ public sealed partial class EQAView : Page
     }
 
     public static string FormatDate(DateTime? d) => d?.ToString("d") ?? "-";
-}
-
-public class IntToVisibilityConverter : IValueConverter
-{
-    public object Convert(object value, Type targetType, object parameter, string language)
-    {
-        if (value is int i)
-        {
-            return i > 0 ? Visibility.Visible : Visibility.Collapsed;
-        }
-        return Visibility.Collapsed;
-    }
-
-    public object ConvertBack(object value, Type targetType, object parameter, string language)
-    {
-        throw new NotImplementedException();
-    }
 }

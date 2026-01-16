@@ -23,7 +23,6 @@ public class QualityService : IQualityService
     private readonly HttpClient _httpClient;
     private LocalDocumentStore? _localStore;
     private readonly NetworkConfigStore _networkConfig;
-    private bool _useLocalMode = false;
 
     public QualityService(HttpClient httpClient, LocalDocumentStore? localStore = null, NetworkConfigStore? networkConfig = null)
     {

@@ -26,7 +26,6 @@ public class InventoryService : IInventoryService
     private readonly HttpClient _httpClient;
     private LocalDocumentStore? _localStore;
     private readonly NetworkConfigStore _networkConfig;
-    private bool _useLocalMode = false;
 
     public InventoryService(HttpClient httpClient, LocalDocumentStore? localStore = null, NetworkConfigStore? networkConfig = null)
     {
@@ -98,7 +97,7 @@ public class InventoryService : IInventoryService
                 ReorderQty = request.ReorderQty,
                 Status = ReagentStatus.ACTIVO,
                 CreatedAt = DateTime.UtcNow,
-                Fluorescence = request.Fluorescence,
+                Fluorescence = request.Fluorescence ?? "",
                 ManufacturerCode = request.ManufacturerCode,
                 InternalCode = request.InternalCode
             };

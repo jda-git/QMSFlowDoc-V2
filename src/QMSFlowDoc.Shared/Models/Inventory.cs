@@ -58,7 +58,7 @@ public class Reagent
     public Supplier? Supplier { get; set; }
     public string? ManufacturerCode { get; set; }
     public string? InternalCode { get; set; }
-    public string Fluorescence { get; set; } = string.Empty;
+    public string? Fluorescence { get; set; }
     public string ReagentType { get; set; } = string.Empty;
     public string Reference { get; set; } = string.Empty;
     

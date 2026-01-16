@@ -23,7 +23,7 @@ public class LocalDocumentStore
         
         // Try to use Workspace path, fallback to AppData
         // Use Task.Run to avoid potential deadlock on UI thread
-        string basePath;
+        string? basePath;
         try
         {
             var config = Task.Run(() => networkConfig.LoadAsync()).Result;
@@ -45,6 +45,18 @@ public class LocalDocumentStore
         var dbFolder = Path.Combine(basePath, "Base_datos");
         Directory.CreateDirectory(dbFolder);
         _dbPath = Path.Combine(dbFolder, "qmsflowdoc.db");
+    }
+
+    public async Task<string?> GetBaseDocumentPathAsync()
+    {
+        var config = await _networkConfig.LoadAsync();
+        if (config != null && config.UseNetworkStorage)
+        {
+            return config.LocalBasePath;
+        }
+        
+        var localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+        return Path.Combine(localAppData, "QMSFlowDoc", "Files");
     }
 
     public async Task InitializeAsync()
@@ -433,6 +445,63 @@ public class LocalDocumentStore
                 FOREIGN KEY (ProgramId) REFERENCES EQAPrograms(Id) ON DELETE CASCADE
             );
 
+            -- Phase 3: EQA Overhaul Tables
+            CREATE TABLE IF NOT EXISTS EQAProviders (
+                Id TEXT PRIMARY KEY,
+                Name TEXT NOT NULL,
+                Code TEXT,
+                ContactInfo TEXT,
+                IsActive INTEGER DEFAULT 1
+            );
+
+            CREATE TABLE IF NOT EXISTS EQASchemes (
+                Id TEXT PRIMARY KEY,
+                ProviderId TEXT NOT NULL,
+                Name TEXT NOT NULL,
+                Matrix TEXT,
+                Periodicity TEXT,
+                ResponsibleUserId TEXT,
+                Notes TEXT,
+                FOREIGN KEY (ProviderId) REFERENCES EQAProviders(Id) ON DELETE CASCADE
+            );
+
+            CREATE TABLE IF NOT EXISTS EQARounds (
+                Id TEXT PRIMARY KEY,
+                SchemeId TEXT NOT NULL,
+                RoundCode TEXT NOT NULL,
+                Year INTEGER NOT NULL,
+                DateReceived TEXT,
+                DateAnalysis TEXT,
+                DateDeadline TEXT,
+                DateSubmitted TEXT,
+                DateReportReceived TEXT,
+                DateClosed TEXT,
+                Status TEXT DEFAULT 'OPEN',
+                FolderPath TEXT,
+                Notes TEXT,
+                ReviewerUserId TEXT,
+                ReviewerName TEXT,
+                ReviewDate TEXT,
+                FOREIGN KEY (SchemeId) REFERENCES EQASchemes(Id) ON DELETE CASCADE
+            );
+            
+            CREATE TABLE IF NOT EXISTS EQARoundResults (
+                Id TEXT PRIMARY KEY,
+                RoundId TEXT NOT NULL,
+                ParameterName TEXT,
+                ResultValue TEXT,
+                Unit TEXT,
+                TargetValue TEXT,
+                Deviation TEXT,
+                ZScore REAL,
+                Performance TEXT,
+                Score REAL,
+                Notes TEXT,
+                INTERNAL_STATUS TEXT,
+                FOREIGN KEY (RoundId) REFERENCES EQARounds(Id) ON DELETE CASCADE
+            );
+
+
             CREATE TABLE IF NOT EXISTS Methods (
                 Id TEXT PRIMARY KEY,
                 Code TEXT NOT NULL,
@@ -478,6 +547,13 @@ public class LocalDocumentStore
         // Migration: Add columns to existing tables if missing
         try
         {
+             using var colCmd = new SqliteCommand("ALTER TABLE EQAResults ADD COLUMN Notes TEXT", connection);
+             await colCmd.ExecuteNonQueryAsync();
+        }
+        catch { /* Column already exists */ }
+
+        try
+        {
             using var colCmd = new SqliteCommand("ALTER TABLE Documents ADD COLUMN Area TEXT", connection);
             await colCmd.ExecuteNonQueryAsync();
         }
@@ -497,11 +573,50 @@ public class LocalDocumentStore
         }
         catch { /* Column already exists */ }
 
+        // EQA Overhaul Migrations
+        await EnsureColumnExists(connection, "EQARounds", "FolderPath", "TEXT");
+        await EnsureColumnExists(connection, "EQARounds", "Notes", "TEXT");
+        await EnsureColumnExists(connection, "EQARoundResults", "Notes", "TEXT");
+        await EnsureColumnExists(connection, "EQARoundResults", "InternalStatus", "TEXT");
+        await EnsureColumnExists(connection, "EQARounds", "ReviewerUserId", "TEXT");
+        await EnsureColumnExists(connection, "EQARounds", "ReviewerName", "TEXT");
+        await EnsureColumnExists(connection, "EQARounds", "ReviewDate", "TEXT");
+
         // Seed Document Types
         await SeedDocumentTypesAsync(connection);
         
         // Seed default admin user if no users exist
         await SeedDefaultUserAsync(connection);
+    }
+
+    private async Task EnsureColumnExists(SqliteConnection connection, string tableName, string columnName, string columnType)
+    {
+        try
+        {
+            var checkSql = $"PRAGMA table_info({tableName})";
+            using var cmd = new SqliteCommand(checkSql, connection);
+            using var reader = await cmd.ExecuteReaderAsync();
+            bool exists = false;
+            while (await reader.ReadAsync())
+            {
+                if (reader["name"].ToString()?.Equals(columnName, StringComparison.OrdinalIgnoreCase) == true)
+                {
+                    exists = true;
+                    break;
+                }
+            }
+
+            if (!exists)
+            {
+                var alterSql = $"ALTER TABLE {tableName} ADD COLUMN {columnName} {columnType}";
+                using var alterCmd = new SqliteCommand(alterSql, connection);
+                await alterCmd.ExecuteNonQueryAsync();
+            }
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Error ensuring column {columnName} in {tableName}: {ex.Message}");
+        }
     }
 
     private async Task SeedDefaultUserAsync(SqliteConnection connection)
@@ -620,7 +735,7 @@ public class LocalDocumentStore
             updateCmd.Parameters.AddWithValue("$id", existingId);
             await updateCmd.ExecuteNonQueryAsync();
 
-            return Guid.Parse(existingId);
+            return Guid.Parse(existingId ?? Guid.Empty.ToString());
         }
 
         // Create new user
@@ -693,15 +808,15 @@ public class LocalDocumentStore
         if (await reader.ReadAsync())
         {
             return new StaffProfileDetailDto(
-                Id: Guid.Parse(reader["Id"].ToString()),
-                UserId: Guid.Parse(reader["UserId"].ToString()),
-                Username: reader["Username"] == DBNull.Value ? "" : reader["Username"].ToString(),
-                FullName: reader["FullName"] == DBNull.Value ? "" : reader["FullName"].ToString(),
-                Email: reader["Email"] == DBNull.Value ? "" : reader["Email"].ToString(),
-                PositionTitle: reader["Position"] == DBNull.Value ? "" : reader["Position"].ToString(),
-                Department: reader["Department"] == DBNull.Value ? "" : reader["Department"].ToString(),
+                Id: Guid.Parse(reader["Id"].ToString() ?? Guid.Empty.ToString()),
+                UserId: Guid.Parse(reader["UserId"].ToString() ?? Guid.Empty.ToString()),
+                Username: reader["Username"].ToString() ?? string.Empty,
+                FullName: reader["FullName"].ToString() ?? string.Empty,
+                Email: reader["Email"].ToString() ?? string.Empty,
+                PositionTitle: reader["Position"].ToString() ?? string.Empty,
+                Department: reader["Department"].ToString() ?? string.Empty,
                 HiredAt: DateTime.TryParse(reader["HireDate"].ToString(), out var hd) ? hd : DateTime.MinValue,
-                RoleName: reader["Role"] == DBNull.Value ? "Usuario" : reader["Role"].ToString(),
+                RoleName: reader["Role"].ToString() ?? "Usuario",
                 IsActive: Convert.ToInt32(reader["IsActive"]) == 1
             );
         }
@@ -774,7 +889,7 @@ public class LocalDocumentStore
                         Hours = trainReader.GetDecimal(3)
                     },
                     CompletionDate = trainReader.IsDBNull(4) ? null : DateTime.Parse(trainReader.GetString(4)),
-                    Result = trainReader.IsDBNull(5) ? null : trainReader.GetString(5),
+                    Result = trainReader.IsDBNull(5) ? "APTO" : trainReader.GetString(5),
                     Notes = trainReader.IsDBNull(6) ? null : trainReader.GetString(6)
                 });
             }
@@ -901,16 +1016,16 @@ public class LocalDocumentStore
         {
             var r = new ReagentListDto
             {
-                Id = Guid.Parse(reader["Id"].ToString()),
-                Name = reader["Name"].ToString(),
-                Manufacturer = reader["Manufacturer"] == DBNull.Value ? null : reader["Manufacturer"].ToString(),
-                ReagentType = reader["ReagentType"] == DBNull.Value ? "" : reader["ReagentType"].ToString(),
-                Reference = reader["Reference"] == DBNull.Value ? "" : reader["Reference"].ToString(),
+                Id = Guid.Parse(reader["Id"]?.ToString() ?? Guid.Empty.ToString()),
+                Name = reader["Name"]?.ToString() ?? "N/A",
+                Manufacturer = reader["Manufacturer"] == DBNull.Value ? null : reader["Manufacturer"]?.ToString(),
+                ReagentType = reader["ReagentType"] == DBNull.Value ? "" : reader["ReagentType"]?.ToString() ?? "",
+                Reference = reader["Reference"] == DBNull.Value ? "" : reader["Reference"]?.ToString() ?? "",
                 Status = (ReagentStatus)Convert.ToInt32(reader["Status"]),
                 MinStock = Convert.ToDecimal(reader["MinStock"]),
                 TargetStock = Convert.ToDecimal(reader["TargetStock"]),
-                Fluorescence = reader["Fluorescence"] == DBNull.Value ? "" : reader["Fluorescence"].ToString(),
-                InternalCode = reader["InternalCode"] == DBNull.Value ? "" : reader["InternalCode"].ToString(),
+                Fluorescence = reader["Fluorescence"] == DBNull.Value ? "" : reader["Fluorescence"]?.ToString() ?? "",
+                InternalCode = reader["InternalCode"] == DBNull.Value ? "" : reader["InternalCode"]?.ToString() ?? "",
                 AvailableLots = new List<LotSummaryDto>()
             };
             reagents.Add(r);
@@ -932,16 +1047,17 @@ public class LocalDocumentStore
             while (await lotReader.ReadAsync())
             {
                 var qty = Convert.ToDecimal(lotReader["AvailableQty"]);
-                var expiry = DateTime.Parse(lotReader["ExpiryDate"].ToString());
+                var expiryStr = lotReader["ExpiryDate"]?.ToString();
+                DateTime expiry = expiryStr != null ? DateTime.Parse(expiryStr) : DateTime.MaxValue;
                 
                 total += qty;
                 if (expiry < nearest) nearest = expiry;
                 
                 r.AvailableLots.Add(new LotSummaryDto
                 {
-                    Id = Guid.Parse(lotReader["Id"].ToString()),
-                    LotNumber = lotReader["LotNumber"].ToString(),
-                    ExpiryDate = expiry,
+                    Id = Guid.Parse(lotReader["Id"]?.ToString() ?? Guid.Empty.ToString()),
+                    LotNumber = lotReader["LotNumber"]?.ToString() ?? "N/A",
+                    ExpiryDate = expiry == DateTime.MaxValue ? null : expiry,
                     Qty = qty
                 });
             }
@@ -980,21 +1096,21 @@ public class LocalDocumentStore
         {
             var r = new Reagent
             {
-                Id = Guid.Parse(reader["Id"].ToString()),
-                Name = reader["Name"].ToString(),
-                Manufacturer = reader["Manufacturer"] == DBNull.Value ? null : reader["Manufacturer"].ToString(),
-                ReagentType = reader["ReagentType"].ToString(),
-                Reference = reader["Reference"].ToString(),
+                Id = Guid.Parse(reader["Id"]?.ToString() ?? Guid.Empty.ToString()),
+                Name = reader["Name"]?.ToString() ?? "N/A",
+                Manufacturer = reader["Manufacturer"] == DBNull.Value ? null : reader["Manufacturer"]?.ToString(),
+                ReagentType = reader["ReagentType"]?.ToString() ?? "",
+                Reference = reader["Reference"]?.ToString() ?? "",
                 Status = (ReagentStatus)Convert.ToInt32(reader["Status"]),
                 MinStock = Convert.ToDecimal(reader["MinStock"]),
                 TargetStock = Convert.ToDecimal(reader["TargetStock"]),
                 ReorderQty = Convert.ToDecimal(reader["ReorderQty"]),
-                Fluorescence = reader["Fluorescence"].ToString(),
-                InternalCode = reader["InternalCode"] == DBNull.Value ? "" : reader["InternalCode"].ToString(),
-                Classification = reader["Classification"] == DBNull.Value ? null : reader["Classification"].ToString(),
-                StorageConditions = reader["StorageConditions"] == DBNull.Value ? null : reader["StorageConditions"].ToString(),
+                Fluorescence = reader["Fluorescence"]?.ToString() ?? "",
+                InternalCode = reader["InternalCode"] == DBNull.Value ? "" : reader["InternalCode"]?.ToString() ?? "",
+                Classification = reader["Classification"] == DBNull.Value ? null : reader["Classification"]?.ToString(),
+                StorageConditions = reader["StorageConditions"] == DBNull.Value ? null : reader["StorageConditions"]?.ToString(),
                 OpenShelfLifeDays = reader["OpenShelfLifeDays"] == DBNull.Value ? null : Convert.ToInt32(reader["OpenShelfLifeDays"]),
-                CreatedAt = DateTime.Parse(reader["CreatedAt"].ToString()),
+                CreatedAt = DateTime.Parse(reader["CreatedAt"]?.ToString() ?? DateTime.MinValue.ToString("o")),
                 Lots = new List<ReagentLot>()
             };
             return r;
@@ -1154,10 +1270,10 @@ public class LocalDocumentStore
         {
             lots.Add(new ReagentLot
             {
-                Id = Guid.Parse(reader["Id"].ToString()),
-                ReagentId = Guid.Parse(reader["ReagentId"].ToString()),
-                LotNumber = reader["LotNumber"].ToString(),
-                ExpiryDate = DateTime.Parse(reader["ExpiryDate"].ToString()),
+                Id = Guid.Parse(reader["Id"]?.ToString() ?? Guid.Empty.ToString()),
+                ReagentId = Guid.Parse(reader["ReagentId"]?.ToString() ?? Guid.Empty.ToString()),
+                LotNumber = reader["LotNumber"]?.ToString() ?? "N/A",
+                ExpiryDate = DateTime.Parse(reader["ExpiryDate"]?.ToString() ?? DateTime.MinValue.ToString("o")),
                 AvailableQty = Convert.ToDecimal(reader["AvailableQty"]),
                 Status = (LotStatus)Convert.ToInt32(reader["Status"])
             });
@@ -1262,17 +1378,17 @@ public class LocalDocumentStore
         var list = new List<InventoryMovementDto>();
         while (await reader.ReadAsync())
         {
-            var id = Guid.Parse(reader["Id"].ToString());
-            var date = DateTime.Parse(reader["Date"].ToString());
-            var userName = reader["Username"] == DBNull.Value ? "System" : reader["Username"].ToString();
-            var reagentName = reader["Name"] == DBNull.Value ? "Unknown" : reader["Name"].ToString();
-            var manufacturer = reader["Manufacturer"] == DBNull.Value ? null : reader["Manufacturer"].ToString();
-            var fluorescence = reader["Fluorescence"] == DBNull.Value ? null : reader["Fluorescence"].ToString();
+            var id = Guid.Parse(reader["Id"]?.ToString() ?? Guid.Empty.ToString());
+            var date = DateTime.Parse(reader["Date"]?.ToString() ?? DateTime.MinValue.ToString("o"));
+            var userName = reader["Username"] == DBNull.Value ? "System" : reader["Username"]?.ToString() ?? "System";
+            var reagentName = reader["Name"] == DBNull.Value ? "Unknown" : reader["Name"]?.ToString() ?? "Unknown";
+            var manufacturer = reader["Manufacturer"] == DBNull.Value ? null : reader["Manufacturer"]?.ToString();
+            var fluorescence = reader["Fluorescence"] == DBNull.Value ? null : reader["Fluorescence"]?.ToString();
             var adjustmentType = ((InventoryMovementType)Convert.ToInt32(reader["Type"])).ToString();
             var quantity = Convert.ToDecimal(reader["Qty"]);
-            var lotNumber = reader["LotNumber"] == DBNull.Value ? null : reader["LotNumber"].ToString();
-            DateTime? expiryDate = reader["ExpiryDate"] == DBNull.Value ? null : DateTime.Parse(reader["ExpiryDate"].ToString());
-            var reason = reader["Notes"] == DBNull.Value ? "" : reader["Notes"].ToString();
+            var lotNumber = reader["LotNumber"] == DBNull.Value ? null : reader["LotNumber"]?.ToString();
+            DateTime? expiryDate = reader["ExpiryDate"] == DBNull.Value ? null : DateTime.Parse(reader["ExpiryDate"]?.ToString() ?? DateTime.MinValue.ToString("o"));
+            var reason = reader["Notes"] == DBNull.Value ? "" : reader["Notes"]?.ToString() ?? "";
 
             list.Add(new InventoryMovementDto(
                 id,
@@ -1304,16 +1420,16 @@ public class LocalDocumentStore
         var list = new List<EquipmentListDto>();
         while (await reader.ReadAsync())
         {
-            var id = Guid.Parse(reader["Id"].ToString());
+            var id = Guid.Parse(reader["Id"]?.ToString() ?? Guid.Empty.ToString());
             var dto = new EquipmentListDto
             {
                 Id = id,
-                AssetTag = reader["AssetTag"] == DBNull.Value ? null : reader["AssetTag"].ToString(),
-                Name = reader["Name"].ToString(),
-                Model = reader["Model"] == DBNull.Value ? null : reader["Model"].ToString(),
-                SoftwareVersion = reader["SoftwareVersion"] == DBNull.Value ? null : reader["SoftwareVersion"].ToString(),
-                FirmwareVersion = reader["FirmwareVersion"] == DBNull.Value ? null : reader["FirmwareVersion"].ToString(),
-                Location = reader["Location"] == DBNull.Value ? null : reader["Location"].ToString(),
+                AssetTag = reader["AssetTag"] == DBNull.Value ? null : reader["AssetTag"]?.ToString(),
+                Name = reader["Name"]?.ToString() ?? "Sin nombre",
+                Model = reader["Model"] == DBNull.Value ? null : reader["Model"]?.ToString(),
+                SoftwareVersion = reader["SoftwareVersion"] == DBNull.Value ? null : reader["SoftwareVersion"]?.ToString(),
+                FirmwareVersion = reader["FirmwareVersion"] == DBNull.Value ? null : reader["FirmwareVersion"]?.ToString(),
+                Location = reader["Location"] == DBNull.Value ? null : reader["Location"]?.ToString(),
                 Status = (EquipmentStatus)Convert.ToInt32(reader["Status"])
             };
             list.Add(dto);
@@ -1333,10 +1449,10 @@ public class LocalDocumentStore
 
             if (await lastReader.ReadAsync())
             {
-                eq.LastMaintenanceEventId = Guid.Parse(lastReader["Id"].ToString());
-                eq.LastMaintenanceAt = DateTime.Parse(lastReader["PerformedAt"].ToString());
+                eq.LastMaintenanceEventId = Guid.Parse(lastReader["Id"]?.ToString() ?? Guid.Empty.ToString());
+                eq.LastMaintenanceAt = DateTime.Parse(lastReader["PerformedAt"]?.ToString() ?? DateTime.MinValue.ToString("o"));
                 eq.LastEventType = ((MaintenanceEventType)Convert.ToInt32(lastReader["EventType"])).ToString();
-                eq.LastOutcome = lastReader["Outcome"] == DBNull.Value ? null : lastReader["Outcome"].ToString();
+                eq.LastOutcome = lastReader["Outcome"] == DBNull.Value ? null : lastReader["Outcome"]?.ToString();
                 
                 if (lastReader["NextMaintenanceMonth"] != DBNull.Value && lastReader["NextMaintenanceYear"] != DBNull.Value)
                 {
@@ -1395,7 +1511,7 @@ public class LocalDocumentStore
                         using var instCmd = new SqliteCommand(instSql, connection);
                         instCmd.Parameters.AddWithValue("$eid", eq.Id.ToString());
                         var inst = await instCmd.ExecuteScalarAsync();
-                        if (inst != null && inst != DBNull.Value) baseDate = DateTime.Parse(inst.ToString());
+                        if (inst != null && inst != DBNull.Value) baseDate = DateTime.Parse(inst?.ToString() ?? DateTime.MinValue.ToString("o"));
                     }
 
                     if (baseDate.HasValue)
@@ -1428,18 +1544,18 @@ public class LocalDocumentStore
         {
             return new Equipment
             {
-                Id = Guid.Parse(reader["Id"].ToString()),
-                AssetTag = reader["AssetTag"] == DBNull.Value ? null : reader["AssetTag"].ToString(),
-                Name = reader["Name"].ToString(),
-                Manufacturer = reader["Manufacturer"] == DBNull.Value ? null : reader["Manufacturer"].ToString(),
-                Model = reader["Model"] == DBNull.Value ? null : reader["Model"].ToString(),
-                SerialNumber = reader["SerialNumber"] == DBNull.Value ? null : reader["SerialNumber"].ToString(),
-                SoftwareVersion = reader["SoftwareVersion"] == DBNull.Value ? null : reader["SoftwareVersion"].ToString(),
-                FirmwareVersion = reader["FirmwareVersion"] == DBNull.Value ? null : reader["FirmwareVersion"].ToString(),
-                Location = reader["Location"] == DBNull.Value ? null : reader["Location"].ToString(),
+                Id = Guid.Parse(reader["Id"]?.ToString() ?? Guid.Empty.ToString()),
+                AssetTag = reader["AssetTag"] == DBNull.Value ? null : reader["AssetTag"]?.ToString(),
+                Name = reader["Name"]?.ToString() ?? "Sin nombre",
+                Manufacturer = reader["Manufacturer"] == DBNull.Value ? null : reader["Manufacturer"]?.ToString(),
+                Model = reader["Model"] == DBNull.Value ? null : reader["Model"]?.ToString(),
+                SerialNumber = reader["SerialNumber"] == DBNull.Value ? null : reader["SerialNumber"]?.ToString(),
+                SoftwareVersion = reader["SoftwareVersion"] == DBNull.Value ? null : reader["SoftwareVersion"]?.ToString(),
+                FirmwareVersion = reader["FirmwareVersion"] == DBNull.Value ? null : reader["FirmwareVersion"]?.ToString(),
+                Location = reader["Location"] == DBNull.Value ? null : reader["Location"]?.ToString(),
                 Status = (EquipmentStatus)Convert.ToInt32(reader["Status"]),
-                InstalledAt = reader["InstalledAt"] == DBNull.Value ? null : DateTime.Parse(reader["InstalledAt"].ToString()),
-                Notes = reader["Notes"] == DBNull.Value ? null : reader["Notes"].ToString()
+                InstalledAt = reader["InstalledAt"] == DBNull.Value ? null : DateTime.Parse(reader["InstalledAt"]?.ToString() ?? DateTime.MinValue.ToString("o")),
+                Notes = reader["Notes"] == DBNull.Value ? null : reader["Notes"]?.ToString()
             };
         }
         return null;
@@ -1701,13 +1817,13 @@ public class LocalDocumentStore
         {
             return new MaintenanceEvent
             {
-                Id = Guid.Parse(reader["Id"].ToString()),
-                EquipmentId = Guid.Parse(reader["EquipmentId"].ToString()),
-                PerformedAt = DateTime.Parse(reader["PerformedAt"].ToString()),
+                Id = Guid.Parse(reader["Id"]?.ToString() ?? Guid.Empty.ToString()),
+                EquipmentId = Guid.Parse(reader["EquipmentId"]?.ToString() ?? Guid.Empty.ToString()),
+                PerformedAt = DateTime.Parse(reader["PerformedAt"]?.ToString() ?? DateTime.MinValue.ToString("o")),
                 EventType = (MaintenanceEventType)Convert.ToInt32(reader["EventType"]),
-                Outcome = reader["Outcome"] == DBNull.Value ? null : reader["Outcome"].ToString(),
-                Notes = reader["Notes"] == DBNull.Value ? null : reader["Notes"].ToString(),
-                PerformedByUserId = reader["PerformedByUserId"] == DBNull.Value ? null : Guid.Parse(reader["PerformedByUserId"].ToString()),
+                Outcome = reader["Outcome"] == DBNull.Value ? null : reader["Outcome"]?.ToString(),
+                Notes = reader["Notes"] == DBNull.Value ? null : reader["Notes"]?.ToString(),
+                PerformedByUserId = reader["PerformedByUserId"] == DBNull.Value ? null : Guid.Parse(reader["PerformedByUserId"]?.ToString() ?? Guid.Empty.ToString()),
                 HasIssues = reader["HasIssues"] != DBNull.Value && Convert.ToInt32(reader["HasIssues"]) == 1,
                 NextMaintenanceMonth = reader["NextMaintenanceMonth"] == DBNull.Value ? null : Convert.ToInt32(reader["NextMaintenanceMonth"]),
                 NextMaintenanceYear = reader["NextMaintenanceYear"] == DBNull.Value ? null : Convert.ToInt32(reader["NextMaintenanceYear"])
@@ -1777,16 +1893,14 @@ public class LocalDocumentStore
         var list = new List<EquipmentDailyQCDto>();
         while (await reader.ReadAsync())
         {
-            var id = Guid.Parse(reader["Id"].ToString());
-            var eqId = Guid.Parse(reader["EquipmentId"].ToString());
-            var lot = reader["LotNumber"].ToString();
+            var id = Guid.Parse(reader["Id"]?.ToString() ?? Guid.Empty.ToString());
+            var eqId = Guid.Parse(reader["EquipmentId"]?.ToString() ?? Guid.Empty.ToString());
+            var lot = reader["LotNumber"]?.ToString() ?? "N/A";
             var pass = Convert.ToInt32(reader["IsPass"]) == 1;
-            var notes = reader["Notes"] == DBNull.Value ? null : reader["Notes"].ToString();
-            var at = DateTime.Parse(reader["PerformedAt"].ToString());
-            var by = reader["Username"] == DBNull.Value ? "Unknown" : reader["Username"].ToString();
+            var notes = reader["Notes"] == DBNull.Value ? null : reader["Notes"]?.ToString();
+            var at = DateTime.Parse(reader["PerformedAt"]?.ToString() ?? DateTime.MinValue.ToString("o"));
+            var by = reader["Username"] == DBNull.Value ? "Unknown" : reader["Username"]?.ToString() ?? "Unknown";
 
-            // Positional record constructor check:
-            // public record EquipmentDailyQCDto(Guid Id, Guid EquipmentId, string LotNumber, bool IsPass, string? Notes, DateTime PerformedAt, string PerformedByName);
             list.Add(new EquipmentDailyQCDto(id, eqId, lot, pass, notes, at, by));
         }
         return list;
@@ -1805,7 +1919,7 @@ public class LocalDocumentStore
         var list = new List<NCListDto>();
         while (await reader.ReadAsync())
         {
-            var id = Guid.Parse(reader["Id"].ToString());
+            var id = Guid.Parse(reader["Id"]?.ToString() ?? Guid.Empty.ToString());
             
             // Count actions
             var actionSql = "SELECT COUNT(*) FROM IncidentActions WHERE NCId = $id";
@@ -1815,14 +1929,14 @@ public class LocalDocumentStore
 
             list.Add(new NCListDto(
                 id,
-                DateTime.Parse(reader["DetectedAt"].ToString()),
-                reader["Title"].ToString(),
+                DateTime.Parse(reader["DetectedAt"]?.ToString() ?? DateTime.MinValue.ToString("o")),
+                reader["Title"]?.ToString() ?? "N/A",
                 (NCSeverity)Convert.ToInt32(reader["Severity"]),
                 (NCStatus)Convert.ToInt32(reader["Status"]),
                 Convert.ToInt32(reader["ImpactPatient"]) == 1,
                 count,
-                reader["Origin"] == DBNull.Value ? null : reader["Origin"].ToString(),
-                reader["RootCauseAnalysis"] == DBNull.Value ? null : reader["RootCauseAnalysis"].ToString()
+                reader["Origin"] == DBNull.Value ? null : reader["Origin"]?.ToString(),
+                reader["RootCauseAnalysis"] == DBNull.Value ? null : reader["RootCauseAnalysis"]?.ToString()
             ));
         }
         return list;
@@ -1842,18 +1956,18 @@ public class LocalDocumentStore
         {
             var nc = new Nonconformity
             {
-                Id = Guid.Parse(reader["Id"].ToString()),
-                DetectedAt = DateTime.Parse(reader["DetectedAt"].ToString()),
-                DetectedByUserId = reader["DetectedByUserId"] == DBNull.Value ? null : Guid.Parse(reader["DetectedByUserId"].ToString()),
-                Title = reader["Title"].ToString(),
-                Description = reader["Description"].ToString(),
+                Id = Guid.Parse(reader["Id"]?.ToString() ?? Guid.Empty.ToString()),
+                DetectedAt = DateTime.Parse(reader["DetectedAt"]?.ToString() ?? DateTime.MinValue.ToString("o")),
+                DetectedByUserId = reader["DetectedByUserId"] == DBNull.Value ? null : Guid.Parse(reader["DetectedByUserId"]?.ToString() ?? Guid.Empty.ToString()),
+                Title = reader["Title"]?.ToString() ?? "N/A",
+                Description = reader["Description"]?.ToString() ?? "N/A",
                 Severity = (NCSeverity)Convert.ToInt32(reader["Severity"]),
                 ImpactPatient = Convert.ToInt32(reader["ImpactPatient"]) == 1,
-                Containment = reader["Containment"] == DBNull.Value ? null : reader["Containment"].ToString(),
-                Origin = reader["Origin"] == DBNull.Value ? null : reader["Origin"].ToString(),
-                RootCauseAnalysis = reader["RootCauseAnalysis"] == DBNull.Value ? null : reader["RootCauseAnalysis"].ToString(),
+                Containment = reader["Containment"] == DBNull.Value ? null : reader["Containment"]?.ToString(),
+                Origin = reader["Origin"] == DBNull.Value ? null : reader["Origin"]?.ToString(),
+                RootCauseAnalysis = reader["RootCauseAnalysis"] == DBNull.Value ? null : reader["RootCauseAnalysis"]?.ToString(),
                 Status = (NCStatus)Convert.ToInt32(reader["Status"]),
-                UpdatedAt = DateTime.Parse(reader["UpdatedAt"].ToString())
+                UpdatedAt = DateTime.Parse(reader["UpdatedAt"]?.ToString() ?? DateTime.MinValue.ToString("o"))
             };
             reader.Close();
             
@@ -1866,14 +1980,14 @@ public class LocalDocumentStore
             {
                 nc.Actions.Add(new CapaAction
                 {
-                    Id = Guid.Parse(actionReader["Id"].ToString()),
+                    Id = Guid.Parse(actionReader["Id"]?.ToString() ?? Guid.Empty.ToString()),
                     NCId = id,
                     ActionType = (CAPAActionType)Convert.ToInt32(actionReader["ActionType"]),
-                    Description = actionReader["Description"].ToString(),
-                    OwnerUserId = actionReader["OwnerUserId"] == DBNull.Value ? null : Guid.Parse(actionReader["OwnerUserId"].ToString()),
-                    DueDate = actionReader["DueDate"] == DBNull.Value ? null : DateTime.Parse(actionReader["DueDate"].ToString()),
-                    CompletedAt = actionReader["CompletedAt"] == DBNull.Value ? null : DateTime.Parse(actionReader["CompletedAt"].ToString()),
-                    EffectivenessCheck = actionReader["EffectivenessCheck"] == DBNull.Value ? null : actionReader["EffectivenessCheck"].ToString(),
+                    Description = actionReader["Description"]?.ToString() ?? "N/A",
+                    OwnerUserId = actionReader["OwnerUserId"] == DBNull.Value ? null : Guid.Parse(actionReader["OwnerUserId"]?.ToString() ?? Guid.Empty.ToString()),
+                    DueDate = actionReader["DueDate"] == DBNull.Value ? null : DateTime.Parse(actionReader["DueDate"]?.ToString() ?? DateTime.MinValue.ToString("o")),
+                    CompletedAt = actionReader["CompletedAt"] == DBNull.Value ? null : DateTime.Parse(actionReader["CompletedAt"]?.ToString() ?? DateTime.MinValue.ToString("o")),
+                    EffectivenessCheck = actionReader["EffectivenessCheck"] == DBNull.Value ? null : actionReader["EffectivenessCheck"]?.ToString(),
                     Status = (CAPAStatus)Convert.ToInt32(actionReader["Status"])
                 });
             }
@@ -1968,7 +2082,7 @@ public class LocalDocumentStore
         await cmd.ExecuteNonQueryAsync();
     }
 
-    public async Task CreateAuditLogAsync(string action, string resource, string details, string userId, string userName)
+    public async Task CreateAuditLogAsync(string action, string resource, string details, string? userId, string? userName)
     {
         using var connection = new SqliteConnection($"Data Source={_dbPath}");
         await connection.OpenAsync();
@@ -3486,8 +3600,8 @@ public class LocalDocumentStore
         while (await reader.ReadAsync())
         {
             list.Add(new EQAProgramDto(
-                Guid.Parse(reader["Id"].ToString()),
-                reader["Name"].ToString(),
+                Guid.Parse(reader["Id"].ToString() ?? Guid.Empty.ToString()),
+                reader["Name"].ToString() ?? string.Empty,
                 reader["Provider"] == DBNull.Value ? null : reader["Provider"].ToString(),
                 reader["CycleFrequency"] == DBNull.Value ? null : reader["CycleFrequency"].ToString(),
                 (EQAStatus)Convert.ToInt32(reader["Status"]),
@@ -3511,7 +3625,7 @@ public class LocalDocumentStore
             if (await lastReader.ReadAsync())
             {
                 var perf = (EQAPerformance)Convert.ToInt32(lastReader["Performance"]);
-                var cycle = lastReader["CycleIdentifier"].ToString();
+                var cycle = lastReader["CycleIdentifier"].ToString() ?? string.Empty;
                 color = perf == EQAPerformance.SATISFACTORY ? "Green" : (perf == EQAPerformance.UNSATISFACTORY ? "Red" : "Orange");
                 lastRes = $"{perf} ({cycle})";
             }
@@ -3587,13 +3701,13 @@ public class LocalDocumentStore
             if (perf == EQAPerformance.NOT_EVALUATED) color = "Gray";
 
             list.Add(new EQAResultDto(
-                Guid.Parse(reader["Id"].ToString()),
-                Guid.Parse(reader["ProgramId"].ToString()),
-                reader["CycleIdentifier"].ToString(),
+                Guid.Parse(reader["Id"].ToString() ?? Guid.Empty.ToString()),
+                Guid.Parse(reader["ProgramId"].ToString() ?? Guid.Empty.ToString()),
+                reader["CycleIdentifier"].ToString() ?? string.Empty,
                 ((EQAResultStatus)Convert.ToInt32(reader["Status"])).ToString(),
                 perf.ToString(),
                 color,
-                reader["SubmissionDate"] == DBNull.Value ? null : DateTime.Parse(reader["SubmissionDate"].ToString()),
+                reader["SubmissionDate"] == DBNull.Value ? null : DateTime.Parse(reader["SubmissionDate"].ToString() ?? string.Empty),
                 reader["Score"] == DBNull.Value ? null : Convert.ToDecimal(reader["Score"]),
                 reader["Notes"] == DBNull.Value ? null : reader["Notes"].ToString()
             ));
@@ -3723,17 +3837,17 @@ public class LocalDocumentStore
         {
             return new Method
             {
-                Id = Guid.Parse(reader["Id"].ToString()),
-                Code = reader["Code"].ToString(),
-                Name = reader["Name"].ToString(),
-                Category = reader["Category"] == DBNull.Value ? null : reader["Category"].ToString(),
+                Id = Guid.Parse(reader["Id"]?.ToString() ?? Guid.Empty.ToString()),
+                Code = reader["Code"]?.ToString() ?? "N/A",
+                Name = reader["Name"]?.ToString() ?? "N/A",
+                Category = reader["Category"] == DBNull.Value ? null : reader["Category"]?.ToString(),
                 Status = (MethodStatus)Convert.ToInt32(reader["Status"]),
-                CurrentVersion = reader["CurrentVersion"] == DBNull.Value ? null : reader["CurrentVersion"].ToString(),
-                EffectiveDate = reader["EffectiveDate"] == DBNull.Value ? null : DateTime.Parse(reader["EffectiveDate"].ToString()),
-                DocumentId = reader["DocumentId"] == DBNull.Value ? null : Guid.Parse(reader["DocumentId"].ToString()),
-                Notes = reader["Notes"] == DBNull.Value ? null : reader["Notes"].ToString(),
-                CreatedAt = DateTime.Parse(reader["CreatedAt"].ToString()),
-                UpdatedAt = reader["UpdatedAt"] == DBNull.Value ? null : DateTime.Parse(reader["UpdatedAt"].ToString())
+                CurrentVersion = reader["CurrentVersion"] == DBNull.Value ? null : reader["CurrentVersion"]?.ToString(),
+                EffectiveDate = reader["EffectiveDate"] == DBNull.Value ? null : DateTime.Parse(reader["EffectiveDate"]?.ToString() ?? DateTime.MinValue.ToString("o")),
+                DocumentId = reader["DocumentId"] == DBNull.Value ? null : Guid.Parse(reader["DocumentId"]?.ToString() ?? Guid.Empty.ToString()),
+                Notes = reader["Notes"] == DBNull.Value ? null : reader["Notes"]?.ToString(),
+                CreatedAt = DateTime.Parse(reader["CreatedAt"]?.ToString() ?? DateTime.MinValue.ToString("o")),
+                UpdatedAt = reader["UpdatedAt"] == DBNull.Value ? null : DateTime.Parse(reader["UpdatedAt"]?.ToString() ?? DateTime.MinValue.ToString("o"))
             };
         }
         return null;
@@ -3797,6 +3911,330 @@ public class LocalDocumentStore
         cmd.Parameters.AddWithValue("$id", authorizationId.ToString());
         await cmd.ExecuteNonQueryAsync();
     }
+
+    #region EQA Phase 3 Implementations
+
+    public async Task<List<EQAProviderDto>> GetEQAProvidersAsync()
+    {
+        using var connection = new SqliteConnection($"Data Source={_dbPath}");
+        await connection.OpenAsync();
+        var list = new List<EQAProviderDto>();
+        using var cmd = new SqliteCommand("SELECT * FROM EQAProviders WHERE IsActive=1 ORDER BY Name", connection);
+        using var reader = await cmd.ExecuteReaderAsync();
+        while (await reader.ReadAsync())
+        {
+            list.Add(new EQAProviderDto(
+                Guid.Parse(reader["Id"].ToString()!),
+                reader["Name"].ToString()!,
+                reader["Code"] == DBNull.Value ? null : reader["Code"].ToString(),
+                reader["ContactInfo"] == DBNull.Value ? null : reader["ContactInfo"].ToString(),
+                reader.GetInt32(reader.GetOrdinal("IsActive")) == 1
+            ));
+        }
+        return list;
+    }
+
+    public async Task UpsertEQAProviderAsync(EQAProviderDto provider)
+    {
+        using var connection = new SqliteConnection($"Data Source={_dbPath}");
+        await connection.OpenAsync();
+        var sql = @"INSERT INTO EQAProviders (Id, Name, Code, ContactInfo, IsActive)
+                    VALUES ($id, $name, $code, $contact, $active)
+                    ON CONFLICT(Id) DO UPDATE SET
+                    Name=excluded.Name, Code=excluded.Code, ContactInfo=excluded.ContactInfo, IsActive=excluded.IsActive";
+        using var cmd = new SqliteCommand(sql, connection);
+        cmd.Parameters.AddWithValue("$id", provider.Id.ToString());
+        cmd.Parameters.AddWithValue("$name", provider.Name);
+        cmd.Parameters.AddWithValue("$code", provider.Code ?? (object)DBNull.Value);
+        cmd.Parameters.AddWithValue("$contact", provider.ContactInfo ?? (object)DBNull.Value);
+        cmd.Parameters.AddWithValue("$active", provider.IsActive ? 1 : 0);
+        await cmd.ExecuteNonQueryAsync();
+    }
+
+    public async Task<List<EQASchemeDto>> GetEQASchemesAsync(Guid? providerId = null)
+    {
+        using var connection = new SqliteConnection($"Data Source={_dbPath}");
+        await connection.OpenAsync();
+        var list = new List<EQASchemeDto>();
+        var sql = @"SELECT s.*, p.Name as ProviderName 
+                    FROM EQASchemes s
+                    JOIN EQAProviders p ON s.ProviderId = p.Id
+                    WHERE ($pid IS NULL OR s.ProviderId = $pid)
+                    ORDER BY s.Name";
+        using var cmd = new SqliteCommand(sql, connection);
+        cmd.Parameters.AddWithValue("$pid", providerId?.ToString() ?? (object)DBNull.Value);
+        using var reader = await cmd.ExecuteReaderAsync();
+        while (await reader.ReadAsync())
+        {
+            list.Add(new EQASchemeDto(
+                Guid.Parse(reader["Id"].ToString()!),
+                Guid.Parse(reader["ProviderId"].ToString()!),
+                reader["ProviderName"].ToString()!,
+                reader["Name"].ToString()!,
+                reader["Matrix"] == DBNull.Value ? null : reader["Matrix"].ToString(),
+                reader["Periodicity"] == DBNull.Value ? null : reader["Periodicity"].ToString(),
+                reader["ResponsibleUserId"] == DBNull.Value ? null : Guid.Parse(reader["ResponsibleUserId"].ToString()!),
+                reader["Notes"] == DBNull.Value ? null : reader["Notes"].ToString()
+            ));
+        }
+        return list;
+    }
+
+    public async Task<EQASchemeDto?> GetEQASchemeByIdAsync(Guid id)
+    {
+        using var connection = new SqliteConnection($"Data Source={_dbPath}");
+        await connection.OpenAsync();
+        var sql = @"SELECT s.*, p.Name as ProviderName 
+                    FROM EQASchemes s
+                    JOIN EQAProviders p ON s.ProviderId = p.Id
+                    WHERE s.Id = $id";
+        using var cmd = new SqliteCommand(sql, connection);
+        cmd.Parameters.AddWithValue("$id", id.ToString());
+        using var reader = await cmd.ExecuteReaderAsync();
+        if (await reader.ReadAsync())
+        {
+            return new EQASchemeDto(
+                Guid.Parse(reader["Id"].ToString()!),
+                Guid.Parse(reader["ProviderId"].ToString()!),
+                reader["ProviderName"].ToString()!,
+                reader["Name"].ToString()!,
+                reader["Matrix"] == DBNull.Value ? null : reader["Matrix"].ToString(),
+                reader["Periodicity"] == DBNull.Value ? null : reader["Periodicity"].ToString(),
+                reader["ResponsibleUserId"] == DBNull.Value ? null : Guid.Parse(reader["ResponsibleUserId"].ToString()!),
+                reader["Notes"] == DBNull.Value ? null : reader["Notes"].ToString()
+            );
+        }
+        return null;
+    }
+
+    public async Task UpsertEQASchemeAsync(EQASchemeDto scheme)
+    {
+        using var connection = new SqliteConnection($"Data Source={_dbPath}");
+        await connection.OpenAsync();
+        var sql = @"INSERT INTO EQASchemes (Id, ProviderId, Name, Matrix, Periodicity, ResponsibleUserId, Notes)
+                    VALUES ($id, $pid, $name, $matrix, $period, $resp, $notes)
+                    ON CONFLICT(Id) DO UPDATE SET
+                    ProviderId=excluded.ProviderId, Name=excluded.Name, Matrix=excluded.Matrix, 
+                    Periodicity=excluded.Periodicity, ResponsibleUserId=excluded.ResponsibleUserId, Notes=excluded.Notes";
+        using var cmd = new SqliteCommand(sql, connection);
+        cmd.Parameters.AddWithValue("$id", scheme.Id.ToString());
+        cmd.Parameters.AddWithValue("$pid", scheme.ProviderId.ToString());
+        cmd.Parameters.AddWithValue("$name", scheme.Name);
+        cmd.Parameters.AddWithValue("$matrix", scheme.Matrix ?? (object)DBNull.Value);
+        cmd.Parameters.AddWithValue("$period", scheme.Periodicity ?? (object)DBNull.Value);
+        cmd.Parameters.AddWithValue("$resp", scheme.ResponsibleUserId?.ToString() ?? (object)DBNull.Value);
+        cmd.Parameters.AddWithValue("$notes", scheme.Notes ?? (object)DBNull.Value);
+        await cmd.ExecuteNonQueryAsync();
+    }
+
+    public async Task<List<EQARoundDto>> GetEQARoundsAsync(Guid schemeId)
+    {
+        using var connection = new SqliteConnection($"Data Source={_dbPath}");
+        await connection.OpenAsync();
+        var list = new List<EQARoundDto>();
+        var sql = @"SELECT r.*, s.Name as SchemeName
+                    FROM EQARounds r
+                    JOIN EQASchemes s ON r.SchemeId = s.Id
+                    WHERE r.SchemeId = $sid
+                    ORDER BY r.RoundCode DESC";
+        using var cmd = new SqliteCommand(sql, connection);
+        cmd.Parameters.AddWithValue("$sid", schemeId.ToString());
+        using var reader = await cmd.ExecuteReaderAsync();
+        while (await reader.ReadAsync())
+        {
+            list.Add(new EQARoundDto(
+                Guid.Parse(reader["Id"].ToString()!),
+                Guid.Parse(reader["SchemeId"].ToString()!),
+                reader["SchemeName"].ToString()!,
+                reader["RoundCode"].ToString()!,
+                Convert.ToInt32(reader["Year"]),
+                reader["DateReceived"] == DBNull.Value ? null : DateTime.Parse(reader["DateReceived"].ToString()!),
+                reader["DateAnalysis"] == DBNull.Value ? null : DateTime.Parse(reader["DateAnalysis"].ToString()!),
+                reader["DateDeadline"] == DBNull.Value ? null : DateTime.Parse(reader["DateDeadline"].ToString()!),
+                reader["DateSubmitted"] == DBNull.Value ? null : DateTime.Parse(reader["DateSubmitted"].ToString()!),
+                reader["DateReportReceived"] == DBNull.Value ? null : DateTime.Parse(reader["DateReportReceived"].ToString()!),
+                reader["DateClosed"] == DBNull.Value ? null : DateTime.Parse(reader["DateClosed"].ToString()!),
+                reader["Status"] == DBNull.Value ? "OPEN" : reader["Status"].ToString()!,
+                reader["FolderPath"] == DBNull.Value ? null : reader["FolderPath"].ToString(),
+                reader["Notes"] == DBNull.Value ? null : reader["Notes"].ToString(),
+                reader["ReviewerUserId"] == DBNull.Value ? null : Guid.Parse(reader["ReviewerUserId"].ToString()!),
+                reader["ReviewerName"] == DBNull.Value ? null : reader["ReviewerName"].ToString(),
+                reader["ReviewDate"] == DBNull.Value ? null : DateTime.Parse(reader["ReviewDate"].ToString()!)
+            ));
+        }
+        return list;
+    }
+
+
+    public async Task UpsertEQARoundAsync(EQARoundDto round)
+    {
+        using var connection = new SqliteConnection($"Data Source={_dbPath}");
+        await connection.OpenAsync();
+        var sql = @"INSERT INTO EQARounds (Id, SchemeId, RoundCode, Year, DateReceived, DateAnalysis, DateDeadline, DateSubmitted, DateReportReceived, DateClosed, Status, FolderPath, Notes, ReviewerUserId, ReviewerName, ReviewDate)
+                    VALUES ($id, $sid, $code, $year, $drecv, $dana, $ddead, $dsub, $drep, $dclose, $stat, $path, $notes, $ruser, $rname, $rdate)
+                    ON CONFLICT(Id) DO UPDATE SET
+                    RoundCode=excluded.RoundCode, Year=excluded.Year, DateReceived=excluded.DateReceived, DateAnalysis=excluded.DateAnalysis,
+                    DateDeadline=excluded.DateDeadline, DateSubmitted=excluded.DateSubmitted, DateReportReceived=excluded.DateReportReceived,
+                    DateClosed=excluded.DateClosed, Status=excluded.Status, FolderPath=excluded.FolderPath, Notes=excluded.Notes,
+                    ReviewerUserId=excluded.ReviewerUserId, ReviewerName=excluded.ReviewerName, ReviewDate=excluded.ReviewDate";
+        using var cmd = new SqliteCommand(sql, connection);
+        cmd.Parameters.AddWithValue("$id", round.Id.ToString());
+        cmd.Parameters.AddWithValue("$sid", round.SchemeId.ToString());
+        cmd.Parameters.AddWithValue("$code", round.RoundCode);
+        cmd.Parameters.AddWithValue("$year", round.Year);
+        cmd.Parameters.AddWithValue("$drecv", round.DateReceived?.ToString("o") ?? (object)DBNull.Value);
+        cmd.Parameters.AddWithValue("$dana", round.DateAnalysis?.ToString("o") ?? (object)DBNull.Value);
+        cmd.Parameters.AddWithValue("$ddead", round.DateDeadline?.ToString("o") ?? (object)DBNull.Value);
+        cmd.Parameters.AddWithValue("$dsub", round.DateSubmitted?.ToString("o") ?? (object)DBNull.Value);
+        cmd.Parameters.AddWithValue("$drep", round.DateReportReceived?.ToString("o") ?? (object)DBNull.Value);
+        cmd.Parameters.AddWithValue("$dclose", round.DateClosed?.ToString("o") ?? (object)DBNull.Value);
+        cmd.Parameters.AddWithValue("$stat", round.Status);
+        cmd.Parameters.AddWithValue("$path", round.FolderPath ?? (object)DBNull.Value);
+        cmd.Parameters.AddWithValue("$notes", round.Notes ?? (object)DBNull.Value);
+        cmd.Parameters.AddWithValue("$ruser", round.ReviewerUserId?.ToString() ?? (object)DBNull.Value);
+        cmd.Parameters.AddWithValue("$rname", round.ReviewerName ?? (object)DBNull.Value);
+        cmd.Parameters.AddWithValue("$rdate", round.ReviewDate?.ToString("o") ?? (object)DBNull.Value);
+        await cmd.ExecuteNonQueryAsync();
+    }
+
+    public async Task<EQARoundDto?> GetEQARoundByIdAsync(Guid id)
+    {
+        using var connection = new SqliteConnection($"Data Source={_dbPath}");
+        await connection.OpenAsync();
+        var sql = @"SELECT r.*, s.Name as SchemeName
+                    FROM EQARounds r
+                    JOIN EQASchemes s ON r.SchemeId = s.Id
+                    WHERE r.Id = $id";
+        using var cmd = new SqliteCommand(sql, connection);
+        cmd.Parameters.AddWithValue("$id", id.ToString());
+        using var reader = await cmd.ExecuteReaderAsync();
+        if (await reader.ReadAsync())
+        {
+            return new EQARoundDto(
+                Guid.Parse(reader["Id"].ToString()!),
+                Guid.Parse(reader["SchemeId"].ToString()!),
+                reader["SchemeName"].ToString()!,
+                reader["RoundCode"].ToString()!,
+                Convert.ToInt32(reader["Year"]),
+                reader["DateReceived"] == DBNull.Value ? null : DateTime.Parse(reader["DateReceived"].ToString()!),
+                reader["DateAnalysis"] == DBNull.Value ? null : DateTime.Parse(reader["DateAnalysis"].ToString()!),
+                reader["DateDeadline"] == DBNull.Value ? null : DateTime.Parse(reader["DateDeadline"].ToString()!),
+                reader["DateSubmitted"] == DBNull.Value ? null : DateTime.Parse(reader["DateSubmitted"].ToString()!),
+                reader["DateReportReceived"] == DBNull.Value ? null : DateTime.Parse(reader["DateReportReceived"].ToString()!),
+                reader["DateClosed"] == DBNull.Value ? null : DateTime.Parse(reader["DateClosed"].ToString()!),
+                reader["Status"] == DBNull.Value ? "OPEN" : reader["Status"].ToString()!,
+                reader["FolderPath"] == DBNull.Value ? null : reader["FolderPath"].ToString(),
+                reader["Notes"] == DBNull.Value ? null : reader["Notes"].ToString(),
+                reader["ReviewerUserId"] == DBNull.Value ? null : Guid.Parse(reader["ReviewerUserId"].ToString()!),
+                reader["ReviewerName"] == DBNull.Value ? null : reader["ReviewerName"].ToString(),
+                reader["ReviewDate"] == DBNull.Value ? null : DateTime.Parse(reader["ReviewDate"].ToString()!)
+            );
+        }
+        return null;
+    }
+    
+    public async Task<List<EQARoundResultDto>> GetEQARoundResultsAsync(Guid roundId)
+    {
+        using var connection = new SqliteConnection($"Data Source={_dbPath}");
+        await connection.OpenAsync();
+        var list = new List<EQARoundResultDto>();
+        // Join with Round/Scheme/Provider if needed, but for now just raw results
+        using var cmd = new SqliteCommand("SELECT * FROM EQARoundResults WHERE RoundId = $rid", connection);
+        cmd.Parameters.AddWithValue("$rid", roundId.ToString());
+        using var reader = await cmd.ExecuteReaderAsync();
+        while (await reader.ReadAsync())
+        {
+            try
+            {
+                list.Add(new EQARoundResultDto(
+                    Guid.Parse(reader["Id"].ToString()!),
+                    Guid.Parse(reader["RoundId"].ToString()!),
+                    reader["ParameterName"] == DBNull.Value ? null : reader["ParameterName"].ToString(),
+                    reader["ResultValue"] == DBNull.Value ? null : reader["ResultValue"].ToString(),
+                    reader["Unit"] == DBNull.Value ? null : reader["Unit"].ToString(),
+                    reader["TargetValue"] == DBNull.Value ? null : reader["TargetValue"].ToString(),
+                    reader["Deviation"] == DBNull.Value ? null : reader["Deviation"].ToString(),
+                    reader["ZScore"] == DBNull.Value ? null : Convert.ToDouble(reader["ZScore"]),
+                    reader["Performance"] == DBNull.Value ? null : reader["Performance"].ToString(),
+                    reader["Score"] == DBNull.Value ? null : Convert.ToDecimal(reader["Score"]),
+                    reader["Notes"] == DBNull.Value ? null : reader["Notes"].ToString(),
+                    reader["InternalStatus"] == DBNull.Value ? null : reader["InternalStatus"].ToString()
+                ));
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Error mapping EQARoundResult: {ex.Message}");
+            }
+        }
+        return list;
+    }
+
+    public async Task UpsertEQARoundResultAsync(EQARoundResultDto result)
+    {
+        using var connection = new SqliteConnection($"Data Source={_dbPath}");
+        await connection.OpenAsync();
+        var sql = @"INSERT INTO EQARoundResults (Id, RoundId, ParameterName, ResultValue, Unit, TargetValue, Deviation, ZScore, Performance, Score, Notes, InternalStatus)
+                    VALUES ($id, $rid, $param, $val, $unit, $target, $dev, $z, $perf, $score, $notes, $stat)
+                    ON CONFLICT(Id) DO UPDATE SET
+                    ParameterName=excluded.ParameterName, ResultValue=excluded.ResultValue, Unit=excluded.Unit,
+                    TargetValue=excluded.TargetValue, Deviation=excluded.Deviation, ZScore=excluded.ZScore,
+                    Performance=excluded.Performance, Score=excluded.Score, Notes=excluded.Notes, InternalStatus=excluded.InternalStatus";
+        using var cmd = new SqliteCommand(sql, connection);
+        cmd.Parameters.AddWithValue("$id", result.Id.ToString());
+        cmd.Parameters.AddWithValue("$rid", result.RoundId.ToString());
+        cmd.Parameters.AddWithValue("$param", result.ParameterName ?? (object)DBNull.Value);
+        cmd.Parameters.AddWithValue("$val", result.ResultValue ?? (object)DBNull.Value);
+        cmd.Parameters.AddWithValue("$unit", result.Unit ?? (object)DBNull.Value);
+        cmd.Parameters.AddWithValue("$target", result.TargetValue ?? (object)DBNull.Value);
+        cmd.Parameters.AddWithValue("$dev", result.Deviation ?? (object)DBNull.Value);
+        cmd.Parameters.AddWithValue("$z", result.ZScore ?? (object)DBNull.Value);
+        cmd.Parameters.AddWithValue("$perf", result.Performance ?? (object)DBNull.Value);
+        cmd.Parameters.AddWithValue("$score", result.Score ?? (object)DBNull.Value);
+        cmd.Parameters.AddWithValue("$notes", result.Notes ?? (object)DBNull.Value);
+        cmd.Parameters.AddWithValue("$stat", result.InternalStatus ?? (object)DBNull.Value);
+        await cmd.ExecuteNonQueryAsync();
+    }
+
+    public async Task ApproveRoundAsync(Guid roundId, Guid userId, string userName)
+    {
+        using var connection = new SqliteConnection($"Data Source={_dbPath}");
+        await connection.OpenAsync();
+        
+        var sql = @"UPDATE EQARounds 
+                    SET Status = 'REVIEWED', 
+                        ReviewerUserId = $uid, 
+                        ReviewerName = $uname, 
+                        ReviewDate = $date 
+                    WHERE Id = $id";
+        
+        using var cmd = new SqliteCommand(sql, connection);
+        cmd.Parameters.AddWithValue("$id", roundId.ToString());
+        cmd.Parameters.AddWithValue("$uid", userId.ToString());
+        cmd.Parameters.AddWithValue("$uname", userName);
+        cmd.Parameters.AddWithValue("$date", DateTime.Now.ToString("o"));
+        await cmd.ExecuteNonQueryAsync();
+
+        await LogAuditAsync("APPROVE_ROUND", "EQARound", roundId.ToString(), userId.ToString(), userName, $"Ronda EQA aprobada por {userName}");
+    }
+
+    private async Task LogAuditAsync(string action, string entityType, string entityId, string userId, string userName, string details)
+    {
+        using var connection = new SqliteConnection($"Data Source={_dbPath}");
+        await connection.OpenAsync();
+        var sql = @"INSERT INTO AuditLogs (Id, Timestamp, UserId, UserName, Action, EntityType, EntityId, Details, MachineName)
+                    VALUES ($id, $ts, $uid, $uname, $act, $etype, $eid, $det, $mach)";
+        using var cmd = new SqliteCommand(sql, connection);
+        cmd.Parameters.AddWithValue("$id", Guid.NewGuid().ToString());
+        cmd.Parameters.AddWithValue("$ts", DateTime.Now.ToString("o"));
+        cmd.Parameters.AddWithValue("$uid", userId ?? (object)DBNull.Value);
+        cmd.Parameters.AddWithValue("$uname", userName ?? (object)DBNull.Value);
+        cmd.Parameters.AddWithValue("$act", action);
+        cmd.Parameters.AddWithValue("$etype", entityType ?? (object)DBNull.Value);
+        cmd.Parameters.AddWithValue("$eid", entityId ?? (object)DBNull.Value);
+        cmd.Parameters.AddWithValue("$det", details ?? (object)DBNull.Value);
+        cmd.Parameters.AddWithValue("$mach", Environment.MachineName);
+        await cmd.ExecuteNonQueryAsync();
+    }
+
+    #endregion
 }
-
-

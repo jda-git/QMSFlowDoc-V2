@@ -6,12 +6,13 @@
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
     xmlns:local="using:QMSFlowDoc.Client.Views"
     xmlns:dto="using:QMSFlowDoc.Shared.DTOs"
+    xmlns:converters="using:QMSFlowDoc.Client.Converters"
     mc:Ignorable="d"
     Background="{ThemeResource ApplicationPageBackgroundThemeBrush}">
 
-    <UserControl.Resources>
-        <local:IntToVisibilityConverter x:Key="IntToVisibilityConverter" />
-    </UserControl.Resources>
+    <Page.Resources>
+        <converters:IntToVisibilityConverter x:Key="IntToVisibilityConverter" />
+    </Page.Resources>
 
     <Grid>
         <Grid.ColumnDefinitions>
@@ -19,7 +20,7 @@
             <ColumnDefinition Width="*" />
         </Grid.ColumnDefinitions>
 
-        <!-- Left Pane: Program List -->
+        <!-- Left Pane: Scheme List -->
         <Grid Grid.Column="0" BorderBrush="{ThemeResource DividerStrokeColorDefaultBrush}" BorderThickness="0,0,1,0">
             <Grid.RowDefinitions>
                 <RowDefinition Height="Auto" />
@@ -29,16 +30,16 @@
             <StackPanel Grid.Row="0" Padding="12" Spacing="8">
                 <TextBlock Text="Control Externo (EQA)" Style="{StaticResource SubtitleTextBlockStyle}" />
                 <CommandBar DefaultLabelPosition="Right" Background="Transparent">
-                    <AppBarButton Icon="Add" Label="Nuevo Programa" Click="AddProgram_Click" />
+                    <AppBarButton Icon="Setting" Label="Configuración" Click="Configuration_Click" />
                 </CommandBar>
             </StackPanel>
 
-            <ListView x:Name="ProgramList" 
+            <ListView x:Name="SchemeList" 
                       Grid.Row="1" 
-                      SelectionChanged="ProgramList_SelectionChanged"
+                      SelectionChanged="SchemeList_SelectionChanged"
                       Padding="0,0,0,12">
                 <ListView.ItemTemplate>
-                    <DataTemplate x:DataType="dto:EQAProgramDto">
+                    <DataTemplate x:DataType="dto:EQASchemeDto">
                         <Grid Padding="12">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="*" />
@@ -46,16 +47,12 @@
                             </Grid.ColumnDefinitions>
                             <StackPanel Grid.Column="0" Spacing="4">
                                 <TextBlock Text="{x:Bind Name}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
-                                <TextBlock Text="{x:Bind Provider}" FontSize="12" Foreground="Gray" />
+                                <TextBlock Text="{x:Bind ProviderName}" FontSize="12" Foreground="Gray" />
                                 <StackPanel Orientation="Horizontal" Spacing="8">
-                                    <TextBlock Text="{x:Bind LastResult}" FontSize="12" Foreground="{x:Bind LastResultColor}" />
+                                    <TextBlock Text="{x:Bind Matrix}" FontSize="12" Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}" />
+                                    <TextBlock Text="•" FontSize="12" Foreground="Gray" />
+                                    <TextBlock Text="{x:Bind Periodicity}" FontSize="12" Foreground="Gray" />
                                 </StackPanel>
-                            </StackPanel>
-                            <StackPanel Grid.Column="1" VerticalAlignment="Center">
-                                <!-- Badge for pending -->
-                                <Border Background="Orange" CornerRadius="10" Padding="8,2" Visibility="{x:Bind PendingCount, Converter={StaticResource IntToVisibilityConverter}}">
-                                    <TextBlock Text="{x:Bind PendingCount}" Foreground="White" FontSize="11" FontWeight="Bold" />
-                                </Border>
                             </StackPanel>
                         </Grid>
                     </DataTemplate>
@@ -81,22 +78,11 @@
                     <TextBlock x:Name="DetailProvider" Style="{StaticResource BodyTextBlockStyle}" Foreground="Gray" />
                 </StackPanel>
                 <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8">
-                    <Button Click="EditProgram_Click">
-                        <StackPanel Orientation="Horizontal" Spacing="8">
-                            <FontIcon Glyph="&#xE70F;" FontSize="16" />
-                            <TextBlock Text="Editar" />
-                        </StackPanel>
-                    </Button>
-                    <Button Click="DeleteProgram_Click" Foreground="Red">
-                        <StackPanel Orientation="Horizontal" Spacing="8">
-                            <FontIcon Glyph="&#xE74D;" FontSize="16" />
-                            <TextBlock Text="Eliminar" />
-                        </StackPanel>
-                    </Button>
+                    <!-- Actions for Scheme? Maybe Edit via Config, here just view -->
                 </StackPanel>
             </Grid>
 
-            <!-- Results List -->
+            <!-- Rounds List -->
             <Grid Grid.Row="1" Padding="24">
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto" />
@@ -105,17 +91,11 @@
                 </Grid.RowDefinitions>
                 
                 <StackPanel Grid.Row="0" Orientation="Horizontal" Spacing="16" Margin="0,0,0,16">
-                    <TextBlock Text="Historial de Resultados" Style="{StaticResource SubtitleTextBlockStyle}" VerticalAlignment="Center" />
-                    <Button Style="{StaticResource AccentButtonStyle}" Click="AddResult_Click">
+                    <TextBlock Text="Rondas / Ciclos" Style="{StaticResource SubtitleTextBlockStyle}" VerticalAlignment="Center" />
+                    <Button Style="{StaticResource AccentButtonStyle}" Click="AddRound_Click">
                         <StackPanel Orientation="Horizontal" Spacing="8">
                             <FontIcon Glyph="&#xE710;" FontSize="16" />
-                            <TextBlock Text="Registrar Resultado" />
-                        </StackPanel>
-                    </Button>
-                    <Button Click="ExportPdf_Click">
-                        <StackPanel Orientation="Horizontal" Spacing="8">
-                            <FontIcon Glyph="&#xEA90;" FontSize="16" />
-                            <TextBlock Text="Exportar PDF" />
+                            <TextBlock Text="Registrar Ronda" />
                         </StackPanel>
                     </Button>
                 </StackPanel>
@@ -123,63 +103,54 @@
 
                 <!-- Header for List -->
                 <Grid Grid.Row="1" Padding="12,8" Background="{ThemeResource SystemControlBackgroundChromeMediumLowBrush}">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="120" />
-                        <ColumnDefinition Width="120" />
+                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="150" />
-                        <ColumnDefinition Width="80" />
+                        <ColumnDefinition Width="120" />
                         <ColumnDefinition Width="120" />
                         <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
                     </Grid.ColumnDefinitions>
-                    <TextBlock Text="Ciclo" Grid.Column="0" FontWeight="Bold"/>
-                    <TextBlock Text="Estado" Grid.Column="1" FontWeight="Bold"/>
-                    <TextBlock Text="Desempeño" Grid.Column="2" FontWeight="Bold"/>
-                    <TextBlock Text="Puntos" Grid.Column="3" FontWeight="Bold"/>
-                    <TextBlock Text="Enviado" Grid.Column="4" FontWeight="Bold"/>
-                    <TextBlock Text="Notas" Grid.Column="5" FontWeight="Bold"/>
+                    <TextBlock Text="Código / Ronda" Grid.Column="0" FontWeight="Bold"/>
+                    <TextBlock Text="Fecha" Grid.Column="1" FontWeight="Bold"/>
+                    <TextBlock Text="Estado" Grid.Column="2" FontWeight="Bold"/>
+                    <TextBlock Text="Notas" Grid.Column="3" FontWeight="Bold"/>
+                    <TextBlock Text="Acciones" Grid.Column="4" FontWeight="Bold"/>
                 </Grid>
 
-                <ListView x:Name="ResultsList" Grid.Row="2" SelectionMode="Single">
+                <ListView x:Name="RoundsList" Grid.Row="2" SelectionMode="Single">
                     <ListView.ItemContainerStyle>
                         <Style TargetType="ListViewItem">
                             <Setter Property="HorizontalContentAlignment" Value="Stretch" />
                         </Style>
                     </ListView.ItemContainerStyle>
                     <ListView.ItemTemplate>
-                        <DataTemplate x:DataType="dto:EQAResultDto">
+                        <DataTemplate x:DataType="dto:EQARoundDto">
                             <Grid Padding="12,8" Background="Transparent">
-                                <Grid.ContextFlyout>
-                                    <MenuFlyout>
-                                        <MenuFlyoutItem Text="Evaluar Desempeño" Click="EvaluateResult_Click" Icon="Edit" Tag="{x:Bind}"/>
-                                    </MenuFlyout>
-                                </Grid.ContextFlyout>
                                 <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="120" />
-                                    <ColumnDefinition Width="120" />
                                     <ColumnDefinition Width="150" />
-                                    <ColumnDefinition Width="80" />
+                                    <ColumnDefinition Width="120" />
                                     <ColumnDefinition Width="120" />
                                     <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
                                 </Grid.ColumnDefinitions>
-                                <TextBlock Text="{x:Bind CycleIdentifier}" Grid.Column="0" />
-                                <TextBlock Text="{x:Bind Status}" Grid.Column="1" />
-                                <TextBlock Text="{x:Bind Performance}" Grid.Column="2" Foreground="{x:Bind PerformanceColor}" FontWeight="SemiBold" />
-                                <TextBlock Text="{x:Bind Score.ToString()}" Grid.Column="3" />
-                                <TextBlock Text="{x:Bind local:EQAView.FormatDate(SubmissionDate)}" Grid.Column="4" />
-                                <TextBlock Text="{x:Bind Notes}" Grid.Column="5" TextTrimming="CharacterEllipsis" ToolTipService.ToolTip="{x:Bind Notes}" />
+                                <TextBlock Text="{x:Bind RoundCode}" Grid.Column="0" FontWeight="SemiBold" />
+                                <TextBlock Text="{x:Bind local:EQAView.FormatDate(DateReceived)}" Grid.Column="1" />
+                                <TextBlock Text="{x:Bind Status}" Grid.Column="2" />
+                                <TextBlock Text="{x:Bind Notes}" Grid.Column="3" TextTrimming="CharacterEllipsis" />
+                                <Button Grid.Column="4" Content="Ver Resultados" Click="ViewRoundResults_Click" Tag="{x:Bind}" FontSize="12" Padding="8,4" />
                             </Grid>
                         </DataTemplate>
                     </ListView.ItemTemplate>
                 </ListView>
                 
-                <TextBlock x:Name="EmptyResultsText" Grid.Row="2" Text="No hay resultados registrados." 
+                <TextBlock x:Name="EmptyRoundsText" Grid.Row="2" Text="No hay rondas registradas." 
                            HorizontalAlignment="Center" VerticalAlignment="Center" Foreground="Gray" Visibility="Collapsed" />
             </Grid>
         </Grid>
 
         <StackPanel Grid.Column="1" x:Name="EmptySelectionPane" VerticalAlignment="Center" HorizontalAlignment="Center" Spacing="12">
             <FontIcon Glyph="&#xE7F4;" FontSize="48" Foreground="Gray" />
-            <TextBlock Text="Selecciona un programa para ver detalles" Foreground="Gray" FontSize="16" />
+            <TextBlock Text="Selecciona un esquema para ver sus rondas" Foreground="Gray" FontSize="16" />
         </StackPanel>
     </Grid>
 </Page>

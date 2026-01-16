@@ -27,7 +27,6 @@ public class EquipmentService : IEquipmentService
     private readonly HttpClient _httpClient;
     private LocalDocumentStore? _localStore;
     private readonly NetworkConfigStore _networkConfig;
-    private bool _useLocalMode = false;
 
     public EquipmentService(HttpClient httpClient, LocalDocumentStore? localStore = null, NetworkConfigStore? networkConfig = null)
     {
