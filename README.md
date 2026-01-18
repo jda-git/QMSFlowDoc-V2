@@ -2,117 +2,109 @@
 
 QMS FlowDoc es una plataforma integral diseñada para la gestión de calidad en laboratorios de citometría de flujo, facilitando el cumplimiento de la norma **ISO 15189** y los requisitos de validación técnica.
 
+> **Arquitectura Local-First**: Esta aplicación funciona sin necesidad de un servidor central de base de datos. Cada PC tiene su propia base de datos local (SQLite) que se sincroniza automáticamente con un repositorio maestro en una carpeta de red compartida.
+
 ---
 
 ## 🛠️ Requerimientos del Sistema
 
-Para compilar y ejecutar este proyecto, necesitas:
+### Entorno de Ejecución (Cliente)
+- **Windows 10 v1809** o superior (x64).
+- Acceso a una carpeta de red compartida (para el Repositorio Maestro).
+- No requiere instalación de .NET Runtime (Versión Portable).
 
-### Desarrollo / Servidor
-- **.NET 9 SDK** (mínimo v9.0)
-- **PostgreSQL 16+** (Servidor de base de datos principal)
-- **Visual Studio 2022** (con carga de trabajo de desarrollo de Windows App SDK) o **JetBrains Rider**.
-
-### Cliente (Usuario Final)
-- **Windows 10 v1809** o superior.
-- Conectividad a internet (para sincronización cloud) o modo offline (SQLite interno).
+### Desarrollo
+- .NET 8.0 SDK o superior.
+- Visual Studio 2022 (Workload: Desarrollo de escritorio .NET + Windows App SDK).
 
 ---
 
-## 🚀 Guía de Instalación y Configuración
+## 🚀 Guía de Instalación y Despliegue
 
-### 1. Base de Datos
-1. Abre tu gestor de base de datos (p.ej., pgAdmin).
-2. Crea una base de datos llamada `qmsflowdoc`.
-3. Ejecuta el script de esquema inicial ubicado en: `docs/schema.sql`.
+### Opción A: Versión Portable (Recomendada)
+Esta versión no requiere instalador.
 
-### 2. Configuración del Backend (API)
-1. Navega a `src/QMSFlowDoc.Api/appsettings.json`.
-2. Configura la cadena de conexión en `ConnectionStrings:DefaultConnection` con tus credenciales de PostgreSQL.
-3. Asegúrate de configurar una clave secreta para JWT en la sección `Jwt:Key` (debe tener al menos 32 caracteres).
+1.  **Preparar la Red**:
+    *   Crea una carpeta compartida en tu servidor o NAS (ej. `Z:\QMS_Repo` o `\\Servidor\QMS_Repo`).
+    *   Asegúrate de que los usuarios tengan permisos de **Lectura y Escritura**.
 
-### 3. Compilación
-Desde una terminal en la raíz del proyecto o desde Visual Studio:
+2.  **Desplegar Cliente**:
+    *   Copia la carpeta de la aplicación (`publish/`) al PC del usuario (ej. `C:\QMSFlowDoc`).
+    *   Ejecuta `QMSFlowDoc.Client.exe`.
 
+3.  **Configuración Inicial**:
+    *   Al abrir por primera vez, el asistente te pedirá:
+        *   **Ruta Local**: Donde se guardarán los datos en este PC (ej. `C:\Datos_QMS`).
+        *   **Ruta de Red**: La carpeta compartida creada en el paso 1.
+    *   ¡Listo! El sistema sincronizará automáticamente la estructura de carpetas y bases de datos.
+
+### Opción B: Compilación desde Código
 ```powershell
-# Restaurar dependencias
+# Restaurar y compilar
 dotnet restore
+dotnet build -p:Platform=x64
 
-# Compilar la solución
-dotnet build QMSFlowDoc.sln
+# Publicar versión portable
+dotnet publish -c Release -r win-x64 --self-contained -p:WindowsPackageType=None -p:WindowsAppSDKSelfContained=true -p:Platform=x64
 ```
 
 ---
 
-## 🏃 Cómo Ejecutar la Aplicación
+## 🔄 Sincronización y Arquitectura de Red
 
-### Opción A: Usar el Lanzador Automático (Recomendado)
-He creado una herramienta de configuración y lanzamiento automático en `src/QMSFlowDoc.Launcher`. Esta herramienta se encarga de:
-1. Comprobar .NET 9 y PostgreSQL.
-2. Instalar requisitos faltantes vía `winget`.
-3. Crear la base de datos y cargar el esquema.
-4. Generar claves de seguridad JWT.
-5. Compilar y arrancar tanto la API como el Cliente.
+El sistema utiliza un modelo de **Sincronización Bidireccional** con política *"Last Write Wins"*:
 
-**Para usarlo:**
-1. Abre una terminal en la raíz.
-2. Ejecuta: `dotnet run --project src/QMSFlowDoc.Launcher`
-3. Sigue las instrucciones en pantalla.
-
-### Opción B: Ejecución Manual
-#### Paso 1: Iniciar el Servidor (API)
-```powershell
-dotnet run --project src/QMSFlowDoc.Api
-```
-*La API se ejecutará por defecto en `https://localhost:5001`.*
-
-### Paso 2: Iniciar el Cliente (WinUI 3)
-Desde Visual Studio, establece `QMSFlowDoc.Client` como proyecto de inicio y presiona **F5**.
-O mediante terminal:
-```powershell
-dotnet run --project src/QMSFlowDoc.Client
-```
+*   **Inicio**: Descarga cambios pendientes de la red.
+*   **Cierre**: Sube los cambios locales a la red.
+*   **Conflictos**: Si un archivo ha cambiado en ambos lados, se muestra un diálogo para que el usuario decida qué versión conservar.
+*   **Logs**: Cada PC genera su propio log de sincronización en la red (`sync_YYYYMMDD_PCNAME.log`) para auditoría.
 
 ---
 
 ## 📖 Manual Básico de Usuario
 
-### 1. Acceso (Login)
-- Al iniciar, la aplicación te pedirá credenciales.
-- Si es la primera vez, el sistema permite registrar un usuario inicial (Administrador).
-- Una vez dentro, verás el **Dashboard** con los estados críticos del laboratorio.
+### 1. Gestión Documental (Módulo A/C)
+- Visualiza, crea y aprueba documentos (Procedimientos, Manuales).
+- Control de versiones automático.
+- Impresión de **Copias Controladas** con marca de agua y trazabilidad.
 
-### 2. Gestión Documental (Módulo A/C)
-- Ve a la sección **Documentos** para ver el listado maestro.
-- **Flujo**: Un documento nace como *Borrador*, se envía a *Revisión* y finalmente es *Aprobado*.
-- **Impresión**: En la vista de detalles, usa el botón de imprimir para generar un PDF con marca de agua "CONTROLADO" y pie de página de trazabilidad.
+### 2. Inventario de Reactivos (Módulo D)
+- Registro de reactivos, lotes y caducidades.
+- **Informes de Consumo**: Trazabilidad de uso por paciente/causa, incluyendo fecha de caducidad.
+- **Informes de Entradas**: Registro de recepciones con conteo de unidades.
+- Alertas de Stock Mínimo y Caducidad.
 
-### 3. Inventario de Reactivos (Módulo D)
-- En **Inventario**, puedes registrar nuevos reactivos y sus lotes correspondientes.
-- Los reactivos con stock igual o inferior al mínimo aparecerán resaltados en el Dashboard.
+### 3. Personal y Competencias (Módulo E) - *ISO 15189*
+- Gestión de expedientes de personal.
+- **Matriz de Competencias**: Planifica, evalúa y supervisa las competencias técnicas.
+- Registro de autorizaciones vigentes y plan de formación continua.
 
 ### 4. Equipos y Mantenimiento (Módulo F)
-- Registra tus citómetros y equipos de soporte en la sección **Equipos**.
-- Registra cada mantenimiento preventivo o correctivo para mantener la trazabilidad.
+- Inventario de equipamiento.
+- Calendario de mantenimientos preventivos y registro de correctivos.
 
-### 5. Personal y Capacitación (Módulo E)
-- Crea fichas de personal en la sección **Personal**.
-- Registra cursos de formación y evaluaciones de competencia para asegurar el cumplimiento normativo.
-
-### 6. Mejora Continua (Módulo G/H/I)
-- **Riesgos**: Evalúa riesgos por probabilidad e impacto.
-- **Incidencias**: Registra no conformidades y asocia acciones CAPA.
-- **Auditorías**: Planifica auditorías internas y registra los hallazgos.
+### 5. Calidad y Mejora (Módulo G/H/I)
+- Auditorías internas.
+- Gestión de No Conformidades y Acciones Correctivas (CAPA).
+- Evaluación de Riesgos.
 
 ---
 
-## ☁️ Sincronización y Modo Offline
+## 📂 Estructura de Carpetas
 
-- La aplicación detecta automáticamente la pérdida de conexión.
-- En modo offline, puedes seguir consultando documentos y datos guardados en la caché local.
-- Un indicador en el pie de página de la aplicación muestra el estado de sincronización ("Al día" o "Offline").
+El sistema organiza la información automáticamente:
+
+```
+/ (Raíz del Repositorio)
+ ├── Documentos/         # Procedimientos aprobados y borradores
+ ├── Base_datos/         # Base de datos SQLite y Backups
+ │    └── Logs/          # Historial de sincronización de cada PC
+ ├── Informes/           # PDFs generados por el sistema
+ ├── Personal/           # Evidencias de competencia y formación
+ └── Inventario/         # Hojas de cálculo auxiliares o evidencias
+```
 
 ---
 
-# Soporte y Validación
-Para consultar la documentación técnica de validación (URS, FRS, IQ/OQ/PQ), revisa la carpeta `docs/validation/`.
+# Soporte
+Para validar la instalación, revisa los logs de sincronización en `Base_datos/Logs` o utiliza la opción "Ver Log de Sincronización" en el menú de Configuración.
