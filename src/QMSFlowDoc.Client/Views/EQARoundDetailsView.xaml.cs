@@ -52,7 +52,7 @@ namespace QMSFlowDoc.Client.Views
                         Title = "Error Crítico de Inicialización",
                         Content = $"No se pudo cargar la vista por un error interno:\n{_initError}",
                         CloseButtonText = "OK",
-                        XamlRoot = this.Content?.XamlRoot ?? ((App)Application.Current).MainWindow.Content.XamlRoot
+                        XamlRoot = this.Content?.XamlRoot ?? ((App)Application.Current).MainWindow?.Content?.XamlRoot!
                     }.ShowAsync();
                     return;
                 }
@@ -262,7 +262,7 @@ namespace QMSFlowDoc.Client.Views
                 if (_round == null) return;
 
                 // Ensure Folder Path exists
-                string folderPath = _round.FolderPath;
+                string? folderPath = _round.FolderPath;
                 if (string.IsNullOrEmpty(folderPath) || !System.IO.Directory.Exists(folderPath))
                 {
                     // Create folder structure logic (duplicated from Service strictly for safety, or call service)

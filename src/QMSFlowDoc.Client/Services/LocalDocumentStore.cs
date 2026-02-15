@@ -407,6 +407,7 @@ public class LocalDocumentStore
                 Impact INTEGER NOT NULL,
                 MitigationPlan TEXT,
                 OwnerUserId TEXT,
+                OwnerName TEXT,
                 Status INTEGER NOT NULL DEFAULT 0,
                 CreatedAt TEXT NOT NULL,
                 UpdatedAt TEXT
@@ -782,6 +783,7 @@ public class LocalDocumentStore
 
         // ISO 15189:2022 Audit Checklist Migration
         await EnsureColumnExists(connection, "AuditPlans", "ChecklistJson", "TEXT");
+        await EnsureColumnExists(connection, "Risks", "OwnerName", "TEXT");
 
         // Seed Document Types
         await SeedDocumentTypesAsync(connection);
@@ -801,7 +803,7 @@ public class LocalDocumentStore
 
             var methodsCmd = new SqliteCommand("SELECT Id, CurrentVersion, EffectiveDate, DocumentId FROM Methods", connection);
             using var reader = await methodsCmd.ExecuteReaderAsync();
-            var migrations = new List<(string MethodId, string Ver, string DocId, string Date)>();
+            var migrations = new List<(string? MethodId, string? Ver, string? DocId, string? Date)>();
             
             while (await reader.ReadAsync())
             {
@@ -3372,7 +3374,8 @@ public async Task<DashboardDataDto> GetDashboardDataAsync()
                 OwnerUserId = reader.IsDBNull(7) ? null : Guid.Parse(reader.GetString(7)),
                 Status = (RiskStatus)reader.GetInt32(8),
                 CreatedAt = DateTime.Parse(reader.GetString(9)),
-                UpdatedAt = reader.IsDBNull(10) ? DateTime.MinValue : DateTime.Parse(reader.GetString(10))
+                UpdatedAt = reader.IsDBNull(10) ? DateTime.MinValue : DateTime.Parse(reader.GetString(10)),
+                OwnerName = reader.FieldCount > 11 && !reader.IsDBNull(11) ? reader.GetString(11) : null
             };
         }
         return null;
@@ -3384,8 +3387,8 @@ public async Task<DashboardDataDto> GetDashboardDataAsync()
         await connection.OpenAsync();
         
         var id = Guid.NewGuid();
-        var sql = @"INSERT INTO Risks (Id, Title, Description, Category, Likelihood, Impact, MitigationPlan, OwnerUserId, Status, CreatedAt, UpdatedAt)
-                    VALUES ($id, $title, $desc, $cat, $like, $imp, $mit, $owner, $stat, $created, $updated)";
+        var sql = @"INSERT INTO Risks (Id, Title, Description, Category, Likelihood, Impact, MitigationPlan, OwnerUserId, OwnerName, Status, CreatedAt, UpdatedAt)
+                    VALUES ($id, $title, $desc, $cat, $like, $imp, $mit, $owner, $ownname, $stat, $created, $updated)";
         
         using var cmd = new SqliteCommand(sql, connection);
         cmd.Parameters.AddWithValue("$id", id.ToString());
@@ -3396,6 +3399,7 @@ public async Task<DashboardDataDto> GetDashboardDataAsync()
         cmd.Parameters.AddWithValue("$imp", (int)req.Impact);
         cmd.Parameters.AddWithValue("$mit", req.MitigationPlan ?? (object)DBNull.Value);
         cmd.Parameters.AddWithValue("$owner", req.OwnerUserId?.ToString() ?? (object)DBNull.Value);
+        cmd.Parameters.AddWithValue("$ownname", req.OwnerName ?? (object)DBNull.Value);
         cmd.Parameters.AddWithValue("$stat", 0); // Active
         cmd.Parameters.AddWithValue("$created", DateTime.UtcNow.ToString("o"));
         cmd.Parameters.AddWithValue("$updated", DateTime.UtcNow.ToString("o"));
@@ -3412,6 +3416,7 @@ public async Task<DashboardDataDto> GetDashboardDataAsync()
             Impact = req.Impact,
             MitigationPlan = req.MitigationPlan,
             OwnerUserId = req.OwnerUserId,
+            OwnerName = req.OwnerName,
             Status = RiskStatus.ACTIVE
         };
     }
@@ -3421,7 +3426,7 @@ public async Task<DashboardDataDto> GetDashboardDataAsync()
          using var connection = new SqliteConnection($"Data Source={_dbPath}");
         await connection.OpenAsync();
         
-        var sql = @"UPDATE Risks SET Title=$title, Description=$desc, Category=$cat, Likelihood=$like, Impact=$imp, MitigationPlan=$mit, OwnerUserId=$owner, UpdatedAt=$updated WHERE Id=$id";
+        var sql = @"UPDATE Risks SET Title=$title, Description=$desc, Category=$cat, Likelihood=$like, Impact=$imp, MitigationPlan=$mit, OwnerUserId=$owner, OwnerName=$ownname, UpdatedAt=$updated WHERE Id=$id";
         using var cmd = new SqliteCommand(sql, connection);
         cmd.Parameters.AddWithValue("$id", id.ToString());
         cmd.Parameters.AddWithValue("$title", req.Title);
@@ -3431,6 +3436,7 @@ public async Task<DashboardDataDto> GetDashboardDataAsync()
         cmd.Parameters.AddWithValue("$imp", (int)req.Impact);
         cmd.Parameters.AddWithValue("$mit", req.MitigationPlan ?? (object)DBNull.Value);
         cmd.Parameters.AddWithValue("$owner", req.OwnerUserId?.ToString() ?? (object)DBNull.Value);
+        cmd.Parameters.AddWithValue("$ownname", req.OwnerName ?? (object)DBNull.Value);
         cmd.Parameters.AddWithValue("$updated", DateTime.UtcNow.ToString("o"));
         
         return await cmd.ExecuteNonQueryAsync() > 0;
@@ -5032,7 +5038,7 @@ public async Task<DashboardDataDto> GetDashboardDataAsync()
                StaffName = reader["StaffName"] == DBNull.Value ? "Unknown" : reader["StaffName"].ToString()!,
                StaffPosition = reader["Position"] == DBNull.Value ? "" : reader["Position"].ToString()!,
                AuthorizationId = Guid.Empty, // No separate Catalog ID
-               AuthorizationName = reader["TaskName"] == DBNull.Value ? "Unknown" : reader["TaskName"].ToString(),
+               AuthorizationName = reader["TaskName"] == DBNull.Value ? "Unknown" : reader["TaskName"].ToString()!,
                Description = reader["Description"] == DBNull.Value ? null : reader["Description"].ToString(),
                ValidFrom = reader["ValidFrom"] == DBNull.Value ? DateTime.MinValue : DateTime.Parse(reader["ValidFrom"].ToString()!),
                ValidUntil = reader["ValidUntil"] == DBNull.Value ? null : DateTime.Parse(reader["ValidUntil"].ToString()!),
@@ -5547,6 +5553,52 @@ public async Task<DashboardDataDto> GetDashboardDataAsync()
         cmd.Parameters.AddWithValue("$id", id.ToString());
         cmd.Parameters.AddWithValue("$status", (int)status);
         return await cmd.ExecuteNonQueryAsync() > 0;
+    }
+
+    public async Task<bool> UpdateContingencyPlanAsync(Guid id, UpdateContingencyPlanRequest req)
+    {
+        using var connection = new SqliteConnection($"Data Source={_dbPath}");
+        await connection.OpenAsync();
+        
+        var sql = @"UPDATE ContingencyPlans 
+                    SET Title=$title, TriggerEvent=$trigger, ProcedureSteps=$steps, ResponsiblePerson=$resp, LastReviewDate=$reviewDate 
+                    WHERE Id=$id";
+                    
+        using var cmd = new SqliteCommand(sql, connection);
+        cmd.Parameters.AddWithValue("$id", id.ToString());
+        cmd.Parameters.AddWithValue("$title", req.Title);
+        cmd.Parameters.AddWithValue("$trigger", req.TriggerEvent);
+        cmd.Parameters.AddWithValue("$steps", req.ProcedureSteps);
+        cmd.Parameters.AddWithValue("$resp", (object?)req.ResponsiblePerson ?? DBNull.Value);
+        cmd.Parameters.AddWithValue("$reviewDate", DateTime.UtcNow.ToString("o")); // Update triggers review date
+        
+        return await cmd.ExecuteNonQueryAsync() > 0;
+    }
+
+    public async Task<ContingencyPlan?> GetContingencyPlanByIdAsync(Guid id)
+    {
+        using var connection = new SqliteConnection($"Data Source={_dbPath}");
+        await connection.OpenAsync();
+        var sql = "SELECT Id, Title, TriggerEvent, ProcedureSteps, ResponsiblePerson, Status, LastReviewDate FROM ContingencyPlans WHERE Id = $id";
+        using var cmd = new SqliteCommand(sql, connection);
+        cmd.Parameters.AddWithValue("$id", id.ToString());
+        using var reader = await cmd.ExecuteReaderAsync();
+        
+        if (await reader.ReadAsync())
+        {
+            return new ContingencyPlan
+            {
+                Id = Guid.Parse(reader.GetString(0)),
+                Title = reader.GetString(1),
+                TriggerEvent = reader.GetString(2),
+
+                ProcedureSteps = reader.IsDBNull(3) ? "" : reader.GetString(3),
+                ResponsiblePerson = reader.IsDBNull(4) ? null : reader.GetString(4),
+                Status = (ContingencyStatus)reader.GetInt32(5),
+                LastReviewDate = reader.IsDBNull(6) ? null : DateTime.Parse(reader.GetString(6))
+            };
+        }
+        return null;
     }
 
     // Permissions & Roles Management

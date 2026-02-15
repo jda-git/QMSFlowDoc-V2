@@ -125,6 +125,29 @@ public sealed partial class SupplierEditorView : Page
         }
     }
 
+    private async void ViewAttachment_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is Button btn && btn.Tag is string path && !string.IsNullOrWhiteSpace(path))
+        {
+            try
+            {
+                if (System.IO.File.Exists(path))
+                {
+                    var file = await Windows.Storage.StorageFile.GetFileFromPathAsync(path);
+                    await Windows.System.Launcher.LaunchFileAsync(file);
+                }
+                else
+                {
+                    await ShowMessage("Error", "El archivo adjunto no se encuentra en la ruta especificada.");
+                }
+            }
+            catch (Exception ex)
+            {
+                await ShowMessage("Error", $"No se pudo abrir el archivo: {ex.Message}");
+            }
+        }
+    }
+
     private async Task ShowMessage(string title, string content)
     {
         var dlg = new ContentDialog { Title = title, Content = content, CloseButtonText = "OK", XamlRoot = this.XamlRoot };

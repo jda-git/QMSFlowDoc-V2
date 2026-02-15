@@ -8,15 +8,15 @@ namespace QMSFlowDoc.Client.Views.Dialogs;
 
 public sealed partial class EvaluateCompetencyDialog : ContentDialog
 {
-    public string SelectedStaffId => StaffCombo.SelectedValue?.ToString();
-    public string SelectedCompetencyId => CompetencyCombo.SelectedValue?.ToString();
+    public string SelectedStaffId => StaffCombo.SelectedValue?.ToString() ?? "";
+    public string SelectedCompetencyId => CompetencyCombo.SelectedValue?.ToString() ?? "";
     public DateTime EvaluationDate => EvaluationDatePicker.Date.HasValue ? EvaluationDatePicker.Date.Value.DateTime : DateTime.Now;
     public DateTime? ValidUntil => ValidUntilDatePicker.Date.HasValue ? ValidUntilDatePicker.Date.Value.DateTime : null;
     public string Evidence => MethodBox.Text; 
     public string Outcome => (OutcomeCombo.SelectedItem as ComboBoxItem)?.Tag?.ToString() ?? "Competent";
     public string Evaluator => EvaluatorBox.Text;
     public string Notes => NotesBox.Text;
-    public string Area => _originalDto?.Area;
+    public string Area => _originalDto?.Area ?? "";
 
     private CompetencyEvaluationDto? _originalDto;
 

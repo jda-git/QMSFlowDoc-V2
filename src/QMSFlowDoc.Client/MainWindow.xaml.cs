@@ -57,27 +57,14 @@ public sealed partial class MainWindow : Window
         try
         {
             var app = (App)Application.Current;
-            
-            // Check if there are local changes to upload
-            if (await app.NetworkConfigStore.ValidatePathsAsync())
+            if (app.RemoteSyncEngine != null)
             {
-                var pendingChanges = await app.NetworkSyncService.GetPendingChangesAsync();
-                var uploadsNeeded = pendingChanges.Where(c => c.Direction == Services.Sync.SyncDirection.Upload).ToList();
-                
-                if (uploadsNeeded.Any())
-                {
-                    // Upload local changes silently on close (Last Write Wins)
-                    foreach (var change in uploadsNeeded)
-                    {
-                        change.ConflictResolution = Services.Sync.SyncDirection.Upload;
-                    }
-                    await app.NetworkSyncService.ExecuteSyncAsync(uploadsNeeded);
-                }
+               await app.RemoteSyncEngine.RunSyncAsync();
             }
         }
         catch
         {
-            // Don't block app closing on sync failure
+            // Logging is handled inside SyncEngine
         }
     }
 
@@ -140,7 +127,8 @@ public sealed partial class MainWindow : Window
             var app = (App)Application.Current;
             
             // Get pending operations count
-            var pendingCount = await app.NetworkConfigStore.LoadAsync();
+            var pendingOps = await app.SnapshotStore.GetPendingOperationsAsync();
+            var pendingCount = pendingOps.Count;
             
             // Get conflicts count
             var conflictsCount = (await app.SnapshotStore.GetConflictsAsync()).Count;
@@ -149,9 +137,13 @@ public sealed partial class MainWindow : Window
             this.DispatcherQueue.TryEnqueue(() =>
             {
                 // Update pending ops badge
-                if (pendingCount != null)
+                if (pendingCount > 0)
                 {
-                    PendingOpsButton.Visibility = Visibility.Collapsed; // Will be visible when OfflineQueue is integrated
+                    PendingOpsButton.Visibility = Visibility.Visible;
+                }
+                else
+                {
+                    PendingOpsButton.Visibility = Visibility.Collapsed;
                 }
                 
                 // Update conflicts badge
@@ -165,8 +157,10 @@ public sealed partial class MainWindow : Window
                     ConflictsButton.Visibility = Visibility.Collapsed;
                 }
                 
-                // Update last sync time (placeholder - will be real when SyncScheduler is integrated)
-                LastSyncTimeText.Text = "Última sincronización: Hace unos momentos";
+                if (app.RemoteSyncEngine != null)
+                {
+                     // LastSyncTimeText.Text = ... (Get from Engine if exposed, or Config)
+                }
             });
         }
         catch
@@ -181,41 +175,17 @@ public sealed partial class MainWindow : Window
         {
             var app = (App)Application.Current;
             
-            // Check if paths are configured
-            if (!await app.NetworkConfigStore.ValidatePathsAsync())
+            if (app.RemoteSyncEngine == null)
             {
-                SyncStatusText.Text = "Rutas no configuradas";
-                SyncStatusText.Foreground = new SolidColorBrush(Colors.Orange);
-                return;
+                 SyncStatusText.Text = "Motor de sincronización no inicializado.";
+                 return;
             }
-            
-            // Get pending changes
-            var pendingChanges = await app.NetworkSyncService.GetPendingChangesAsync();
-            if (!pendingChanges.Any())
-            {
-                SyncStatusText.Text = "Sin cambios pendientes";
-                SyncStatusText.Foreground = new SolidColorBrush(Colors.Green);
-                return;
-            }
-            
-            // Show confirmation dialog
-            var dialog = new Views.Dialogs.SyncConfirmationDialog(pendingChanges);
-            dialog.XamlRoot = this.Content.XamlRoot;
-            
-            var result = await dialog.ShowAsync();
-            if (result != ContentDialogResult.Primary)
-            {
-                SyncStatusText.Text = "Sincronización cancelada";
-                SyncStatusText.Foreground = new SolidColorBrush(Colors.Gray);
-                return;
-            }
-            
-            // Execute sync
+
             SyncButton.IsEnabled = false;
             SyncStatusText.Text = "Sincronizando...";
             SyncStatusText.Foreground = new SolidColorBrush(Colors.Blue);
             
-            await app.NetworkSyncService.ExecuteSyncAsync(dialog.ApprovedChanges);
+            await app.RemoteSyncEngine.RunSyncAsync();
             
             SyncStatusText.Text = "Sincronizado";
             SyncStatusText.Foreground = new SolidColorBrush(Colors.Green);

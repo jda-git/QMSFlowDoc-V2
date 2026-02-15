@@ -39,9 +39,10 @@ public sealed partial class SupplierEvaluationDialog : ContentDialog
     private TextBlock _attachmentLabel = null!;
     private DatePicker _datePicker = null!;
 
-    private StackPanel CreateContent()
+    private Control CreateContent()
     {
-        var panel = new StackPanel { Spacing = 16, Width = 450 };
+        var scroll = new ScrollViewer { VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
+        var panel = new StackPanel { Spacing = 16, Width = 450, Padding = new Thickness(0, 0, 12, 0) };
 
         // Date picker
         _datePicker = new DatePicker { Header = "Fecha de Evaluación", Date = DateTimeOffset.Now };
@@ -75,7 +76,7 @@ public sealed partial class SupplierEvaluationDialog : ContentDialog
         panel.Children.Add(_notApprovedCheck);
 
         // Observations
-        _observationsBox = new TextBox { Header = "Observaciones", PlaceholderText = "Justificación de la decisión...", TextWrapping = TextWrapping.Wrap, AcceptsReturn = true, Height = 80 };
+        _observationsBox = new TextBox { Header = "Observaciones", PlaceholderText = "Justificación de la decisión...", TextWrapping = TextWrapping.Wrap, AcceptsReturn = true, Height = 100 };
         panel.Children.Add(_observationsBox);
 
         // Attachment
@@ -87,7 +88,8 @@ public sealed partial class SupplierEvaluationDialog : ContentDialog
         attachPanel.Children.Add(_attachmentLabel);
         panel.Children.Add(attachPanel);
 
-        return panel;
+        scroll.Content = panel;
+        return scroll;
     }
 
     private Slider CreateScoreSlider(string header)
@@ -136,12 +138,16 @@ public sealed partial class SupplierEvaluationDialog : ContentDialog
         var file = await picker.PickSingleFileAsync();
         if (file != null)
         {
-            // Copy to local documents folder
-            var localFolder = ApplicationData.Current.LocalFolder;
-            var destFolder = await localFolder.CreateFolderAsync("SupplierEvaluations", CreationCollisionOption.OpenIfExists);
-            var destFile = await file.CopyAsync(destFolder, $"{Guid.NewGuid()}_{file.Name}", NameCollisionOption.ReplaceExisting);
+            // Copy to local documents folder using System.IO (Unpackaged friendly)
+            var appDataPath = System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "QMSFlowDoc", "SupplierEvaluations");
+            System.IO.Directory.CreateDirectory(appDataPath);
             
-            _attachmentPath = destFile.Path;
+            var destFilePath = System.IO.Path.Combine(appDataPath, $"{Guid.NewGuid()}_{file.Name}");
+            
+            // Generate a safe unique name
+            System.IO.File.Copy(file.Path, destFilePath, true);
+            
+            _attachmentPath = destFilePath;
             _attachmentLabel.Text = file.Name;
             _attachmentLabel.Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Microsoft.UI.Colors.Green);
         }

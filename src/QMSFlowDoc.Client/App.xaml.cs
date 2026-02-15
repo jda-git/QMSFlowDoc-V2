@@ -31,8 +31,8 @@ public partial class App : Application
     
     // Sync Infrastructure
     public Services.Sync.SnapshotStore SnapshotStore { get; }
-    // public Services.Sync.GoogleDriveProvider DriveProvider { get; }
-    // public Services.Sync.SyncEngine DriveSyncEngine { get; }
+    public Services.Storage.NetworkStorageProvider? RemoteProvider { get; private set; }
+    public Services.Sync.SyncEngine? RemoteSyncEngine { get; private set; }
     public Services.Sync.SyncLogger SyncLogger { get; }
     public Services.Sync.AuditLogger AuditLogger { get; }
     
@@ -45,8 +45,6 @@ public partial class App : Application
     public Services.AuditLogger EquipmentAuditLogger { get; }
     public Services.NetworkConfigStore NetworkConfigStore { get; } = new Services.NetworkConfigStore();
     public Services.LocalConfigStore LocalConfigStore { get; } = new Services.LocalConfigStore();
-    public Services.Sync.NetworkSyncService NetworkSyncService { get; }
-    public Services.SyncAgent SyncAgent { get; }
     
     // Core Data Store
     public Services.LocalDocumentStore LocalStore { get; }
@@ -64,7 +62,7 @@ public partial class App : Application
     public Services.IAuditService AuditService { get; }
 
     // Service Locator Shim
-    public static IServiceProvider Services { get; private set; }
+    public static IServiceProvider Services { get; private set; } = null!;
 
     public App()
     {
@@ -105,21 +103,11 @@ public partial class App : Application
         services.AddSingleton(AuditService); 
         Services = services.BuildServiceProvider();
 
-
         
         // Init Sync Infrastructure
         SnapshotStore = new Services.Sync.SnapshotStore();
-        // REMOVED: Google Drive Provider & Sync Engine (User Request: Local Network Master only)
         SyncLogger = new Services.Sync.SyncLogger();
         AuditLogger = new Services.Sync.AuditLogger();
-        
-        var localDocsPath = System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "QMSFlowDoc", "Files");
-        var localDbPath = System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "QMSFlowDoc");
-        
-        // DriveSyncEngine removed.
-        
-        NetworkSyncService = new Services.Sync.NetworkSyncService(NetworkConfigStore, localDbPath, localDocsPath);
-        SyncAgent = new Services.SyncAgent(NetworkSyncService);
         
         // Init Document Management Services
         PdfWatermarkService = new Services.Documents.PdfWatermarkService();
@@ -161,19 +149,26 @@ public partial class App : Application
                 {
                     await NetworkConfigStore.InitializeStructureAsync();
                     
+                    var config = await NetworkConfigStore.LoadAsync();
                     // Set sync logger to use the configured local path
-                    var localPath = await NetworkConfigStore.GetLocalBasePathAsync();
-                    if (!string.IsNullOrEmpty(localPath))
+                    if (!string.IsNullOrEmpty(config.LocalBasePath))
                     {
-                        SyncLogger.SetBasePath(localPath);
+                        SyncLogger.SetBasePath(config.LocalBasePath);
                     }
+                    
+                        // Initialize Remote Provider and Sync Engine
+                        if (!string.IsNullOrEmpty(config.NetworkBasePath) && !string.IsNullOrEmpty(config.LocalBasePath))
+                        {
+                            RemoteProvider = new Services.Storage.NetworkStorageProvider(config.NetworkBasePath); // Kept if needed elsewhere, otherwise redundant
+                            RemoteSyncEngine = new Services.Sync.SyncEngine(SnapshotStore, NetworkConfigStore, SyncLogger, AuditLogger);
+                            
+                            // Configurar MasterRootId (en Local Network el root es vacío o la base misma)
+                            RemoteSyncEngine.MasterRootId = string.Empty; 
+                        }
                 }
             }
             catch { /* Not configured or network down */ }
             
-            // Start Sync Loop via SyncAgent (internally managed)
-            // _syncTimer created in SyncAgent constructor auto-starts.
-
             Window = new MainWindow();
             MainWindowInstance = Window;
             
@@ -218,28 +213,16 @@ public partial class App : Application
     {
         try
         {
+            if (RemoteSyncEngine == null) return;
+
             // Only run if paths are configured
             if (!await NetworkConfigStore.ValidatePathsAsync()) return;
 
             var config = await NetworkConfigStore.LoadAsync();
             if (!config.AutoSyncOnStartup) return;
 
-            // Check for pending changes
-            var pendingChanges = await NetworkSyncService.GetPendingChangesAsync();
-            if (!pendingChanges.Any()) return;
-
-            // Show confirmation dialog
-            var dialog = new Views.Dialogs.SyncConfirmationDialog(pendingChanges);
-            if (Window?.Content is FrameworkElement fe)
-            {
-                dialog.XamlRoot = fe.XamlRoot;
-            }
-
-            var result = await dialog.ShowAsync();
-            if (result == ContentDialogResult.Primary)
-            {
-                await NetworkSyncService.ExecuteSyncAsync(dialog.ApprovedChanges);
-            }
+            // Execute Sync
+            await RemoteSyncEngine.RunSyncAsync();
         }
         catch (Exception ex)
         {

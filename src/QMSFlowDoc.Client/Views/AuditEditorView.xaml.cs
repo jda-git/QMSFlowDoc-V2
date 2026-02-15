@@ -192,10 +192,10 @@ public sealed partial class AuditEditorView : Page
 
                 if (bytes != null && bytes.Length > 0)
                 {
-                    var tempFolder = Windows.Storage.ApplicationData.Current.TemporaryFolder;
-                    var file = await tempFolder.CreateFileAsync($"audit_report_{_reportDocumentId}.pdf", Windows.Storage.CreationCollisionOption.GenerateUniqueName);
-                    await Windows.Storage.FileIO.WriteBytesAsync(file, bytes);
+                    var tempPath = System.IO.Path.Combine(System.IO.Path.GetTempPath(), $"audit_report_{_reportDocumentId}_{Guid.NewGuid()}.pdf");
+                    await System.IO.File.WriteAllBytesAsync(tempPath, bytes);
                     
+                    var file = await Windows.Storage.StorageFile.GetFileFromPathAsync(tempPath);
                     await Windows.System.Launcher.LaunchFileAsync(file);
                 }
                 else

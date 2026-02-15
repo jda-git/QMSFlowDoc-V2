@@ -3,6 +3,7 @@ using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Navigation;
+using Microsoft.UI.Xaml.Input;
 using QMSFlowDoc.Shared.DTOs;
 using QMSFlowDoc.Shared.Models;
 using QMSFlowDoc.Client.Services;
@@ -393,7 +394,7 @@ public sealed partial class ImprovementView : Page
             Content = new ScrollViewer { Content = stack, MaxHeight = 500 },
             PrimaryButtonText = "Crear",
             CloseButtonText = "Cancelar",
-            DefaultButton = ContentDialogButton.Primary,
+            DefaultButton = ContentDialogButton.None, // Explicitly None to allow Enter in TextBox
             XamlRoot = this.XamlRoot
         };
 
@@ -418,10 +419,14 @@ public sealed partial class ImprovementView : Page
         }
     }
 
-    private async void ContingencyList_ItemClick(object sender, ItemClickEventArgs e)
+    private async void ChangeStatus_Click(object sender, RoutedEventArgs e)
     {
-        if (e.ClickedItem is ContingencyListDto plan)
+        if (ContingencyList.SelectedItem is ContingencyListDto plan)
         {
+            var store = ((App)Application.Current).LocalStore;
+            var fullPlan = await store.GetContingencyPlanByIdAsync(plan.Id);
+            if (fullPlan == null) return;
+
             var statusBox = new ComboBox
             {
                 Header = "Estado",
@@ -435,21 +440,40 @@ public sealed partial class ImprovementView : Page
                 MinWidth = 200
             };
 
+            var stack = new StackPanel { Spacing = 10 };
+            stack.Children.Add(new TextBlock { Text = $"Disparador: {fullPlan.TriggerEvent}", FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, TextWrapping = TextWrapping.Wrap });
+            
+            var stepsBox = new TextBox 
+            { 
+                Header = "Procedimiento / Pasos", 
+                Text = fullPlan.ProcedureSteps, 
+                IsReadOnly = true, 
+                AcceptsReturn = true, 
+                TextWrapping = TextWrapping.Wrap,
+                MinHeight = 60,
+                MaxHeight = 200,
+                Foreground = new SolidColorBrush(Colors.Black)
+            };
+            ScrollViewer.SetVerticalScrollBarVisibility(stepsBox, ScrollBarVisibility.Auto);
+            stack.Children.Add(stepsBox);
+
+            stack.Children.Add(new TextBox 
+            { 
+                Header = "Responsable", 
+                Text = fullPlan.ResponsiblePerson ?? "No asignado", 
+                IsReadOnly = true 
+            });
+
+            stack.Children.Add(statusBox);
+            stack.Children.Add(new TextBlock { Text = "Cambiar a 'Activo' actualiza la fecha de revisión.", FontSize = 12, Foreground = new SolidColorBrush(Colors.Gray) });
+
             var dialog = new ContentDialog
             {
-                Title = $"Plan: {plan.Title}",
-                Content = new StackPanel
-                {
-                    Spacing = 10,
-                    Children = 
-                    {
-                        new TextBlock { Text = $"Disparador: {plan.TriggerEvent}", FontWeight = Microsoft.UI.Text.FontWeights.SemiBold },
-                        statusBox,
-                        new TextBlock { Text = "Cambiar a 'Activo' actualiza la fecha de revisión.", FontSize = 12, Foreground = new SolidColorBrush(Colors.White) }
-                    }
-                },
-                PrimaryButtonText = "Actualizar",
+                Title = $"Plan: {fullPlan.Title}",
+                Content = new ScrollViewer { Content = stack, MaxHeight = 500 },
+                PrimaryButtonText = "Actualizar Estado",
                 CloseButtonText = "Cerrar",
+                DefaultButton = ContentDialogButton.Primary, // Status update is simple, Primary is OK
                 XamlRoot = this.XamlRoot
             };
 
@@ -458,11 +482,118 @@ public sealed partial class ImprovementView : Page
                 var newStatus = (ContingencyStatus?)((statusBox.SelectedItem as ComboBoxItem)?.Tag) ?? plan.Status;
                 if (newStatus != plan.Status)
                 {
-                    var store = ((App)Application.Current).LocalStore;
                     await store.UpdateContingencyStatusAsync(plan.Id, newStatus);
                     await LoadContingencies();
                 }
             }
         }
     }
+
+    private async void EditContingency_Click(object sender, RoutedEventArgs e)
+    {
+        if (ContingencyList.SelectedItem is ContingencyListDto plan)
+        {
+            var store = ((App)Application.Current).LocalStore;
+            var fullPlan = await store.GetContingencyPlanByIdAsync(plan.Id);
+            if (fullPlan == null) return;
+
+            var titleBox = new TextBox { Header = "Título del Plan", Text = fullPlan.Title };
+            var triggerBox = new TextBox { Header = "Evento Disparador", Text = fullPlan.TriggerEvent };
+            
+            // Robust normalization: normalize everything to \n, then split, then join with Environment.NewLine
+            var rawText = fullPlan.ProcedureSteps ?? "";
+            var normalizedText = string.Join(Environment.NewLine, rawText.Replace("\r\n", "\n").Replace("\r", "\n").Split('\n'));
+
+            var stepsBox = new TextBox 
+            { 
+                Header = "Procedimiento / Pasos", 
+                AcceptsReturn = true, 
+                TextWrapping = TextWrapping.Wrap, 
+                Height = 200, // Fixed height for consistency
+                Foreground = new SolidColorBrush(Colors.Black),
+                VerticalAlignment = VerticalAlignment.Top
+            };
+            stepsBox.Text = normalizedText; // Set Text after properties
+            ScrollViewer.SetVerticalScrollBarVisibility(stepsBox, ScrollBarVisibility.Visible);
+            
+            var respBox = new TextBox { Header = "Responsable", Text = fullPlan.ResponsiblePerson ?? "" };
+
+            var stack = new StackPanel { Spacing = 10 };
+            stack.Children.Add(titleBox);
+            stack.Children.Add(triggerBox);
+            stack.Children.Add(stepsBox);
+            stack.Children.Add(respBox);
+
+            var dialog = new ContentDialog
+            {
+                Title = $"Editar Plan: {fullPlan.Title}",
+                Content = new ScrollViewer { Content = stack, MaxHeight = 500 },
+                PrimaryButtonText = "Guardar Cambios",
+                CloseButtonText = "Cancelar",
+                DefaultButton = ContentDialogButton.None, // Essential for multiline text box
+                XamlRoot = this.XamlRoot
+            };
+
+            if (await dialog.ShowAsync() == ContentDialogResult.Primary)
+            {
+                 if (string.IsNullOrWhiteSpace(titleBox.Text) || string.IsNullOrWhiteSpace(triggerBox.Text))
+                {
+                    await ShowMessage("Error", "Título y Evento Disparador son obligatorios.");
+                    return;
+                }
+
+                var req = new UpdateContingencyPlanRequest(
+                    titleBox.Text.Trim(),
+                    triggerBox.Text.Trim(),
+                    stepsBox.Text?.Trim() ?? string.Empty,
+                    string.IsNullOrWhiteSpace(respBox.Text) ? null : respBox.Text
+                );
+
+                await store.UpdateContingencyPlanAsync(plan.Id, req);
+                await LoadContingencies();
+            }
+        }
+    }
+
+    private async void ContingencyList_DoubleTapped(object sender, DoubleTappedRoutedEventArgs e)
+    {
+        if (ContingencyList.SelectedItem is ContingencyListDto plan)
+        {
+            var store = ((App)Application.Current).LocalStore;
+            var fullPlan = await store.GetContingencyPlanByIdAsync(plan.Id);
+            if (fullPlan == null) return;
+
+            var stack = new StackPanel { Spacing = 12 };
+            
+            stack.Children.Add(new TextBlock { Text = "Evento Disparador", FontWeight = Microsoft.UI.Text.FontWeights.Bold });
+            stack.Children.Add(new TextBox { Text = fullPlan.TriggerEvent, IsReadOnly = true, TextWrapping = TextWrapping.Wrap });
+
+            stack.Children.Add(new TextBlock { Text = "Procedimiento / Pasos", FontWeight = Microsoft.UI.Text.FontWeights.Bold });
+            var stepsViewer = new ScrollViewer { MaxHeight = 300, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled, VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
+            var stepsBlock = new TextBlock 
+            { 
+                Text = fullPlan.ProcedureSteps, 
+                TextWrapping = TextWrapping.Wrap, 
+                IsTextSelectionEnabled = true,
+                Foreground = new SolidColorBrush(Colors.Black)
+            };
+            stepsViewer.Content = stepsBlock;
+            stack.Children.Add(stepsViewer);
+
+            stack.Children.Add(new TextBlock { Text = "Responsable", FontWeight = Microsoft.UI.Text.FontWeights.Bold });
+            stack.Children.Add(new TextBox { Text = fullPlan.ResponsiblePerson ?? "No asignado", IsReadOnly = true });
+
+            var dialog = new ContentDialog
+            {
+                Title = $"Plan: {fullPlan.Title}",
+                Content = new ScrollViewer { Content = stack, MaxHeight = 600 },
+                CloseButtonText = "Cerrar",
+                DefaultButton = ContentDialogButton.Close,
+                XamlRoot = this.XamlRoot
+            };
+
+            await dialog.ShowAsync();
+        }
+    }
+
 }

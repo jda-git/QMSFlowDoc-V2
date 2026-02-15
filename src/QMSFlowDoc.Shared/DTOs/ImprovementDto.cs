@@ -28,7 +28,8 @@ public record CreateRiskRequest(
     RiskLikelihood Likelihood,
     RiskImpact Impact,
     string? MitigationPlan,
-    Guid? OwnerUserId
+    Guid? OwnerUserId,
+    string? OwnerName = null
 );
 
 public class AuditListDto
@@ -131,6 +132,13 @@ public class ContingencyListDto
 }
 
 public record CreateContingencyPlanRequest(
+    string Title,
+    string TriggerEvent,
+    string ProcedureSteps,
+    string? ResponsiblePerson
+);
+
+public record UpdateContingencyPlanRequest(
     string Title,
     string TriggerEvent,
     string ProcedureSteps,

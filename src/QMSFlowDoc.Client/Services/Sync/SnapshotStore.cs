@@ -19,13 +19,13 @@ public enum SyncStatus
 public class FileSnapshot
 {
     public string RelativePath { get; set; } = string.Empty;
-    public string? DriveId { get; set; }
-    public string? DriveParentId { get; set; }
+    public string? RemoteId { get; set; }
+    public string? RemoteParentId { get; set; }
     public long SizeBytesLocal { get; set; }
     public DateTime LastModifiedLocalUtc { get; set; }
-    public long? SizeBytesCloud { get; set; }
-    public DateTime? LastModifiedCloudUtc { get; set; }
-    public string? ETagCloud { get; set; }
+    public long? SizeBytesRemote { get; set; }
+    public DateTime? LastModifiedRemoteUtc { get; set; }
+    public string? ETagRemote { get; set; }
     public string? Sha256Hash { get; set; }
     public DateTime LastSyncAtUtc { get; set; }
     public string? LastSyncDirection { get; set; } // "UP" or "DOWN"
@@ -58,13 +58,13 @@ public class SnapshotStore
         var createTableSql = @"
             CREATE TABLE IF NOT EXISTS Snapshots (
                 RelativePath TEXT PRIMARY KEY,
-                DriveId TEXT,
-                DriveParentId TEXT,
+                RemoteId TEXT,
+                RemoteParentId TEXT,
                 SizeBytesLocal INTEGER,
                 LastModifiedLocalUtc TEXT,
-                SizeBytesCloud INTEGER,
-                LastModifiedCloudUtc TEXT,
-                ETagCloud TEXT,
+                SizeBytesRemote INTEGER,
+                LastModifiedRemoteUtc TEXT,
+                ETagRemote TEXT,
                 Sha256Hash TEXT,
                 LastSyncAtUtc TEXT,
                 LastSyncDirection TEXT,
@@ -78,13 +78,19 @@ public class SnapshotStore
         using var command = new SqliteCommand(createTableSql, connection);
         await command.ExecuteNonQueryAsync();
         
-        // Migración: agregar nuevas columnas si la tabla ya existe
+        // Migración: agregar nuevas columnas y renombrar antiguas si existen
         var alterSqls = new[]
         {
             "ALTER TABLE Snapshots ADD COLUMN ConflictResolution TEXT",
             "ALTER TABLE Snapshots ADD COLUMN DeletedAt TEXT",
             "ALTER TABLE Snapshots ADD COLUMN TrashLocation TEXT",
-            "ALTER TABLE Snapshots ADD COLUMN FileGuid TEXT"
+            "ALTER TABLE Snapshots ADD COLUMN FileGuid TEXT",
+            // Rename columns logic (if needed for migration)
+            "ALTER TABLE Snapshots RENAME COLUMN DriveId TO RemoteId",
+            "ALTER TABLE Snapshots RENAME COLUMN DriveParentId TO RemoteParentId",
+            "ALTER TABLE Snapshots RENAME COLUMN SizeBytesCloud TO SizeBytesRemote",
+            "ALTER TABLE Snapshots RENAME COLUMN LastModifiedCloudUtc TO LastModifiedRemoteUtc",
+            "ALTER TABLE Snapshots RENAME COLUMN ETagCloud TO ETagRemote"
         };
         
         foreach (var alterSql in alterSqls)
@@ -96,7 +102,7 @@ public class SnapshotStore
             }
             catch (SqliteException)
             {
-                // Columna ya existe, continuar
+                // Columna ya existe o renombrada, continuar
             }
         }
     }
@@ -108,19 +114,19 @@ public class SnapshotStore
 
         var sql = @"
             INSERT OR REPLACE INTO Snapshots 
-            (RelativePath, DriveId, DriveParentId, SizeBytesLocal, LastModifiedLocalUtc, SizeBytesCloud, LastModifiedCloudUtc, ETagCloud, Sha256Hash, LastSyncAtUtc, LastSyncDirection, Status, ConflictResolution, DeletedAt, TrashLocation, FileGuid)
+            (RelativePath, RemoteId, RemoteParentId, SizeBytesLocal, LastModifiedLocalUtc, SizeBytesRemote, LastModifiedRemoteUtc, ETagRemote, Sha256Hash, LastSyncAtUtc, LastSyncDirection, Status, ConflictResolution, DeletedAt, TrashLocation, FileGuid)
             VALUES 
-            ($path, $driveId, $parentId, $sizeLocal, $modLocal, $sizeCloud, $modCloud, $etag, $hash, $syncTime, $direction, $status, $conflictRes, $deletedAt, $trashLoc, $fileGuid);";
+            ($path, $remoteId, $parentId, $sizeLocal, $modLocal, $sizeRemote, $modRemote, $etag, $hash, $syncTime, $direction, $status, $conflictRes, $deletedAt, $trashLoc, $fileGuid);";
 
         using var command = new SqliteCommand(sql, connection);
         command.Parameters.AddWithValue("$path", snapshot.RelativePath);
-        command.Parameters.AddWithValue("$driveId", snapshot.DriveId ?? (object)DBNull.Value);
-        command.Parameters.AddWithValue("$parentId", snapshot.DriveParentId ?? (object)DBNull.Value);
+        command.Parameters.AddWithValue("$remoteId", snapshot.RemoteId ?? (object)DBNull.Value);
+        command.Parameters.AddWithValue("$parentId", snapshot.RemoteParentId ?? (object)DBNull.Value);
         command.Parameters.AddWithValue("$sizeLocal", snapshot.SizeBytesLocal);
         command.Parameters.AddWithValue("$modLocal", snapshot.LastModifiedLocalUtc.ToString("O"));
-        command.Parameters.AddWithValue("$sizeCloud", snapshot.SizeBytesCloud ?? (object)DBNull.Value);
-        command.Parameters.AddWithValue("$modCloud", snapshot.LastModifiedCloudUtc?.ToString("O") ?? (object)DBNull.Value);
-        command.Parameters.AddWithValue("$etag", snapshot.ETagCloud ?? (object)DBNull.Value);
+        command.Parameters.AddWithValue("$sizeRemote", snapshot.SizeBytesRemote ?? (object)DBNull.Value);
+        command.Parameters.AddWithValue("$modRemote", snapshot.LastModifiedRemoteUtc?.ToString("O") ?? (object)DBNull.Value);
+        command.Parameters.AddWithValue("$etag", snapshot.ETagRemote ?? (object)DBNull.Value);
         command.Parameters.AddWithValue("$hash", snapshot.Sha256Hash ?? (object)DBNull.Value);
         command.Parameters.AddWithValue("$syncTime", snapshot.LastSyncAtUtc.ToString("O"));
         command.Parameters.AddWithValue("$direction", snapshot.LastSyncDirection ?? (object)DBNull.Value);
@@ -235,13 +241,13 @@ public class SnapshotStore
         return new FileSnapshot
         {
             RelativePath = reader.GetString(0),
-            DriveId = reader.IsDBNull(1) ? null : reader.GetString(1),
-            DriveParentId = reader.IsDBNull(2) ? null : reader.GetString(2),
+            RemoteId = reader.IsDBNull(1) ? null : reader.GetString(1),
+            RemoteParentId = reader.IsDBNull(2) ? null : reader.GetString(2),
             SizeBytesLocal = reader.GetInt64(3),
             LastModifiedLocalUtc = DateTime.Parse(reader.GetString(4)),
-            SizeBytesCloud = reader.IsDBNull(5) ? null : reader.GetInt64(5),
-            LastModifiedCloudUtc = reader.IsDBNull(6) ? null : DateTime.Parse(reader.GetString(6)),
-            ETagCloud = reader.IsDBNull(7) ? null : reader.GetString(7),
+            SizeBytesRemote = reader.IsDBNull(5) ? null : reader.GetInt64(5),
+            LastModifiedRemoteUtc = reader.IsDBNull(6) ? null : DateTime.Parse(reader.GetString(6)),
+            ETagRemote = reader.IsDBNull(7) ? null : reader.GetString(7),
             Sha256Hash = reader.IsDBNull(8) ? null : reader.GetString(8),
             LastSyncAtUtc = DateTime.Parse(reader.GetString(9)),
             LastSyncDirection = reader.IsDBNull(10) ? null : reader.GetString(10),

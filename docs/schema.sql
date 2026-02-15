@@ -98,8 +98,8 @@ CREATE TABLE document_versions (
   created_by_user_id  UUID REFERENCES users(user_id),
   created_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
   effective_from      TIMESTAMPTZ,
-  cloud_file_id       TEXT,
-  cloud_etag          TEXT,
+  remote_file_id       TEXT,
+  remote_etag          TEXT,
   sha256              TEXT,
   mime_type           TEXT,
   file_name           TEXT,
@@ -354,3 +354,28 @@ CREATE TABLE capa_actions (
   effectiveness_check TEXT,
   status              TEXT NOT NULL CHECK (status IN ('OPEN','DONE','VERIFIED','CANCELLED')) DEFAULT 'OPEN'
 );
+
+-- =========================
+-- 9) LOCAL SYNC CACHE (SQLite)
+-- =========================
+-- This table exists only in the local client database (sync_snapshot.db)
+/*
+CREATE TABLE Snapshots (
+    RelativePath TEXT PRIMARY KEY,
+    RemoteId TEXT,
+    RemoteParentId TEXT,
+    SizeBytesLocal INTEGER,
+    LastModifiedLocalUtc TEXT,
+    SizeBytesRemote INTEGER,
+    LastModifiedRemoteUtc TEXT,
+    ETagRemote TEXT,
+    Sha256Hash TEXT,
+    LastSyncAtUtc TEXT,
+    LastSyncDirection TEXT,
+    Status INTEGER,
+    ConflictResolution TEXT,
+    DeletedAt TEXT,
+    TrashLocation TEXT,
+    FileGuid TEXT
+);
+*/

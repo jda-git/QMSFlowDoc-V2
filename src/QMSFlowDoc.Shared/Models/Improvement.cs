@@ -56,6 +56,7 @@ public class Risk
     public int RiskScore => (int)Likelihood * (int)Impact;
     public string? MitigationPlan { get; set; }
     public Guid? OwnerUserId { get; set; }
+    public string? OwnerName { get; set; }
     public User? Owner { get; set; }
     public RiskStatus Status { get; set; } = RiskStatus.ACTIVE;
     public DateTime CreatedAt { get; set; }

@@ -45,12 +45,18 @@
                         <ListView x:Name="EvaluationsList" Grid.Row="1">
                             <ListView.ItemTemplate>
                                 <DataTemplate>
-                                    <Grid Padding="8" ColumnDefinitions="120,*,80,80">
-                                        <TextBlock Text="{Binding EvaluationDate, Converter={StaticResource DateFormatConverter}}" Grid.Column="0" />
-                                        <TextBlock Text="{Binding EvaluatedPeriod}" Grid.Column="1" />
-                                        <TextBlock Text="{Binding AverageScore}" Grid.Column="2" FontWeight="Bold" />
-                                        <TextBlock Text="{Binding IsApproved}" Grid.Column="3" 
+                                    <Grid Padding="8" ColumnDefinitions="120,*,80,80, 50">
+                                        <TextBlock Text="{Binding EvaluationDate, Converter={StaticResource DateFormatConverter}}" Grid.Column="0" VerticalAlignment="Center" />
+                                        <TextBlock Text="{Binding EvaluatedPeriod}" Grid.Column="1" VerticalAlignment="Center" />
+                                        <TextBlock Text="{Binding AverageScore}" Grid.Column="2" FontWeight="Bold" VerticalAlignment="Center" />
+                                        <TextBlock Text="{Binding IsApproved}" Grid.Column="3" VerticalAlignment="Center"
                                                    Foreground="{Binding IsApproved, Converter={StaticResource BoolToColorConverter}}" />
+                                        <Button Grid.Column="4" Background="Transparent" BorderThickness="0" 
+                                                ToolTipService.ToolTip="Ver Adjunto"
+                                                Click="ViewAttachment_Click" Tag="{Binding AttachmentPath}"
+                                                Visibility="{Binding AttachmentPath, Converter={StaticResource StringVisibilityConverter}}">
+                                            <FontIcon Glyph="&#xE118;" FontSize="16" />
+                                        </Button>
                                     </Grid>
                                 </DataTemplate>
                             </ListView.ItemTemplate>

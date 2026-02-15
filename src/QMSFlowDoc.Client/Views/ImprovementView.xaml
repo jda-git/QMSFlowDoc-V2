@@ -13,6 +13,7 @@
 
     <Page.Resources>
         <converters:RiskScoreColorConverter x:Key="RiskScoreColorConverter" />
+        <converters:NullToBoolConverter x:Key="NullToBoolConverter" />
     </Page.Resources>
 
     <Grid Padding="24">
@@ -230,10 +231,12 @@
                 <Grid Padding="12" RowDefinitions="Auto, *">
                     <StackPanel Orientation="Horizontal" Spacing="20" Margin="0,0,0,12">
                         <Button Content="Nuevo Plan" Style="{StaticResource AccentButtonStyle}" Click="AddContingency_Click" />
+                        <Button Content="Editar Plan" Click="EditContingency_Click" IsEnabled="{x:Bind ContingencyList.SelectedItem, Mode=OneWay, Converter={StaticResource NullToBoolConverter}, FallbackValue=False}" />
+                        <Button Content="Cambiar Estado" Click="ChangeStatus_Click" IsEnabled="{x:Bind ContingencyList.SelectedItem, Mode=OneWay, Converter={StaticResource NullToBoolConverter}, FallbackValue=False}" />
                     </StackPanel>
-                    <ListView Grid.Row="1" x:Name="ContingencyList" SelectionMode="None"
+                    <ListView Grid.Row="1" x:Name="ContingencyList" SelectionMode="Single"
                               ItemsSource="{x:Bind Contingencies}"
-                              IsItemClickEnabled="True" ItemClick="ContingencyList_ItemClick">
+                              IsItemClickEnabled="False" DoubleTapped="ContingencyList_DoubleTapped">
                         <ListView.HeaderTemplate>
                             <DataTemplate>
                                 <Grid Padding="12,0,0,0">

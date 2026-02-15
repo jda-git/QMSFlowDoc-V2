@@ -36,7 +36,7 @@ public sealed partial class RiskEditorView : Page
             {
                 TitleBox.Text = risk.Title;
                 DescriptionBox.Text = risk.Description;
-                OwnerBox.Text = ""; // Risk model has OwnerUserId (Guid) but UI expects name. Skipped for now or fetch user name.
+                OwnerBox.Text = risk.OwnerName ?? "";
                 MitigationBox.Text = risk.MitigationPlan;
 
                 // Select Category
@@ -117,7 +117,8 @@ public sealed partial class RiskEditorView : Page
                 likelihood,
                 impact,
                 MitigationBox.Text,
-                null // OwnerUserId
+                null, // OwnerUserId
+                OwnerBox.Text // OwnerName
             );
 
             if (_riskId.HasValue)

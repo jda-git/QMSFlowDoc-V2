@@ -48,21 +48,21 @@ public class LocalConfigStore
         await File.WriteAllTextAsync(_configPath, json);
     }
 
-    public async Task<string?> GetDriveFolderIdAsync()
+    public async Task<string?> GetMasterRootIdAsync()
     {
         var config = await LoadAsync();
-        return config.DriveFolderId;
+        return config.MasterRootId;
     }
 
-    public async Task SetDriveFolderIdAsync(string? folderId)
+    public async Task SetMasterRootIdAsync(string? folderId)
     {
         var config = await LoadAsync();
-        config.DriveFolderId = folderId;
+        config.MasterRootId = folderId;
         await SaveAsync(config);
     }
 }
 
 public class LocalConfig
 {
-    public string? DriveFolderId { get; set; }
+    public string? MasterRootId { get; set; }
 }

@@ -173,8 +173,17 @@ public sealed partial class ConfigurationView : Page
             StatusText.Text = "⏳ Sincronización en progreso...";
             StatusText.Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Microsoft.UI.Colors.Blue);
             
-            // Ejecutar sync manual usando NetworkSyncService
-            await app.NetworkSyncService.SyncAllAsync();
+            // Ejecutar sync manual usando RemoteSyncEngine
+            if (app.RemoteSyncEngine != null)
+            {
+                await app.RemoteSyncEngine.RunSyncAsync();
+            }
+            else
+            {
+                StatusText.Text = "❌ Motor de sincronización no inicializado.";
+                StatusText.Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Microsoft.UI.Colors.Red);
+                return;
+            }
             
             StatusText.Text = "✅ Sincronización completa finalizada.";
             StatusText.Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Microsoft.UI.Colors.Green);

@@ -81,17 +81,171 @@ public class NetworkSyncService
         "Informes_Generados"
     };
 
-    public NetworkSyncService(NetworkConfigStore configStore, ISyncLogger logger)
+    private readonly ConflictResolver _conflictResolver;
+    private readonly SnapshotStore _snapshotStore;
+    private readonly IAuditLogger _auditLogger;
+
+    public NetworkSyncService(
+        NetworkConfigStore configStore, 
+        ISyncLogger logger, 
+        ConflictResolver conflictResolver, 
+        SnapshotStore snapshotStore,
+        IAuditLogger auditLogger)
     {
         _configStore = configStore;
         _logger = logger;
+        _conflictResolver = conflictResolver;
+        _snapshotStore = snapshotStore;
+        _auditLogger = auditLogger;
     }
 
-    // Legacy constructor for compatibility
-    public NetworkSyncService(NetworkConfigStore configStore, string localDbPath, string localFilesPath)
+    /// <summary>
+    /// Ejecuta la sincronización espejo completa (Mirror Sync)
+    /// </summary>
+    /// <returns>True si se requiere reinicio (por actualización de DB)</returns>
+    public async Task<bool> PerformMirrorSync()
     {
-        _configStore = configStore;
-        _logger = new SyncLogger();
+        bool restartRequired = false;
+        var syncLog = new List<string>();
+        syncLog.Add($"Inicio de Sincronización: {DateTime.Now}");
+
+        try
+        {
+            var config = await _configStore.LoadAsync();
+            if (string.IsNullOrEmpty(config.NetworkBasePath) || string.IsNullOrEmpty(config.LocalBasePath))
+            {
+                syncLog.Add("Error: Rutas no configuradas.");
+                return false;
+            }
+
+            var networkProvider = new NetworkStorageProvider(config.NetworkBasePath);
+            if (!await networkProvider.TestConnectionAsync())
+            {
+                syncLog.Add("Error: No se pudo conectar a la red.");
+                return false;
+            }
+
+            // 1. Identify Changes
+            var changes = new List<SyncChange>();
+            foreach (var folder in SyncFolders)
+            {
+                // Ignorar carpeta de logs para evitar bucles
+                if (folder.Contains("Auditoria") && folder.Contains("SyncLogs")) continue;
+
+                var folderChanges = await ScanFolderForChangesAsync(config.LocalBasePath, config.NetworkBasePath, folder);
+                changes.AddRange(folderChanges);
+            }
+
+            // 2. Sync Database (Special Handling)
+            var dbChange = changes.FirstOrDefault(c => c.RelativePath.EndsWith("qmsflowdoc.db", StringComparison.OrdinalIgnoreCase));
+            if (dbChange != null)
+            {
+                if (dbChange.Direction == SyncDirection.Download || (dbChange.IsConflict && dbChange.ConflictResolution == SyncDirection.Download))
+                {
+                    syncLog.Add("Detectada actualización de Base de Datos remota. Iniciando procedimiento crítico...");
+                    
+                    // Cerrar conexiones
+                    Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
+                    
+                    // Ejecutar sincronización de DB
+                    await ExecuteSyncChangeAsync(dbChange, config, syncLog);
+                    restartRequired = true;
+                    
+                    // Remover de la lista para no procesar de nuevo
+                    changes.Remove(dbChange);
+                }
+            }
+
+            // 3. Sync Files
+            foreach (var change in changes)
+            {
+                await ExecuteSyncChangeAsync(change, config, syncLog);
+            }
+
+            syncLog.Add($"Fin de Sincronización: {DateTime.Now}");
+        }
+        catch (Exception ex)
+        {
+            syncLog.Add($"ERROR FATAL: {ex.Message}");
+            await _logger.LogErrorAsync("PerformMirrorSync Error", ex);
+        }
+        finally
+        {
+            // 4. Write Audit Log
+            await WriteAuditLogAsync(syncLog);
+        }
+
+        return restartRequired;
+    }
+
+    private async Task ExecuteSyncChangeAsync(SyncChange change, NetworkConfig config, List<string> log)
+    {
+        try
+        {
+            var localPath = Path.Combine(config.LocalBasePath, change.RelativePath);
+            var networkPath = Path.Combine(config.NetworkBasePath, change.RelativePath);
+
+            if (change.IsConflict)
+            {
+                // Resolver conflicto creando copias
+                var resolution = await _conflictResolver.ResolveConflictAsync(
+                    change.RelativePath, 
+                    localPath, 
+                    networkPath, 
+                    change.LocalModified ?? DateTime.MinValue, 
+                    change.NetworkModified ?? DateTime.MinValue);
+
+                log.Add($"CONFLICTO RESUELTO: {change.RelativePath} -> {resolution.Message}");
+            }
+            else if (change.Direction == SyncDirection.Upload)
+            {
+                Directory.CreateDirectory(Path.GetDirectoryName(networkPath)!);
+                File.Copy(localPath, networkPath, overwrite: true);
+                log.Add($"SUBIDO: {change.RelativePath}");
+                
+                // Actualizar snapshot
+                var info = new FileInfo(localPath);
+                await UpdateSnapshotAsync(change.RelativePath, info);
+            }
+            else if (change.Direction == SyncDirection.Download)
+            {
+                Directory.CreateDirectory(Path.GetDirectoryName(localPath)!);
+                File.Copy(networkPath, localPath, overwrite: true);
+                log.Add($"DESCARGADO: {change.RelativePath}");
+                
+                // Actualizar snapshot
+                var info = new FileInfo(localPath);
+                await UpdateSnapshotAsync(change.RelativePath, info);
+            }
+        }
+        catch (Exception ex)
+        {
+            log.Add($"ERROR en {change.RelativePath}: {ex.Message}");
+        }
+    }
+
+    private async Task UpdateSnapshotAsync(string relativePath, FileInfo info)
+    {
+        var snap = await _snapshotStore.GetSnapshotAsync(relativePath) ?? new FileSnapshot { RelativePath = relativePath };
+        snap.LastModifiedLocalUtc = info.LastWriteTimeUtc;
+        snap.SizeBytesLocal = info.Length;
+        snap.LastSyncAtUtc = DateTime.UtcNow;
+        snap.Status = SyncStatus.Synced;
+        await _snapshotStore.UpsertSnapshotAsync(snap);
+    }
+
+    private async Task WriteAuditLogAsync(List<string> logLines)
+    {
+        try
+        {
+            var config = await _configStore.LoadAsync();
+            var logDir = Path.Combine(config.LocalBasePath, "Auditoria", "SyncLogs");
+            Directory.CreateDirectory(logDir);
+            
+            var logFile = Path.Combine(logDir, $"Sync_{DateTime.Now:yyyyMMdd_HHmmss}.log");
+            await File.WriteAllLinesAsync(logFile, logLines);
+        }
+        catch { /* Ignore log write errors */ }
     }
 
     /// <summary>
@@ -160,16 +314,34 @@ public class NetworkSyncService
 
             if (hasLocal && hasNetwork)
             {
-                // Both exist - check for differences
+                // Both exist - check for modifications
                 var localMod = localInfo!.LastWriteTimeUtc;
                 var networkMod = networkInfo!.LastWriteTimeUtc;
+                var snapshot = await _snapshotStore.GetSnapshotAsync(relativePath);
 
-                if (Math.Abs((localMod - networkMod).TotalSeconds) > TimeTolerance)
+                // Use ConflictResolver logic
+ 
+
+                if (_conflictResolver.IsConflict(snapshot, localMod, networkMod, null, null))
                 {
-                    // Files differ - determine direction based on Last Write Wins
-                    if (localMod > networkMod.AddSeconds(TimeTolerance) && networkMod > localMod.AddSeconds(-TimeTolerance * 10))
+                    // Real conflict (both changed since last sync)
+                    changes.Add(new SyncChange
                     {
-                        // Both modified recently (potential conflict)
+                        RelativePath = relativePath,
+                        LocalModified = localMod,
+                        NetworkModified = networkMod,
+                        LocalSize = localInfo.Length,
+                        NetworkSize = networkInfo.Length,
+                        Direction = SyncDirection.Conflict,
+                        IsConflict = true,
+                        ConflictResolution = SyncDirection.None // Will be handled by Resolver
+                    });
+                }
+                else if (Math.Abs((localMod - networkMod).TotalSeconds) > TimeTolerance)
+                {
+                    // Last Write Wins
+                    if (localMod > networkMod)
+                    {
                         changes.Add(new SyncChange
                         {
                             RelativePath = relativePath,
@@ -177,40 +349,8 @@ public class NetworkSyncService
                             NetworkModified = networkMod,
                             LocalSize = localInfo.Length,
                             NetworkSize = networkInfo.Length,
-                            Direction = SyncDirection.Conflict,
-                            IsConflict = true
+                            Direction = SyncDirection.Upload
                         });
-                    }
-                    else if (localMod > networkMod)
-                    {
-                        // Local is newer. Check for "Newer but Smaller" (potential fresh overwrite)
-                        if (localInfo.Length < networkInfo.Length && networkInfo.Length > 0)
-                        {
-                            changes.Add(new SyncChange
-                            {
-                                RelativePath = relativePath,
-                                LocalModified = localMod,
-                                NetworkModified = networkMod,
-                                LocalSize = localInfo.Length,
-                                NetworkSize = networkInfo.Length,
-                                Direction = SyncDirection.Conflict, // Force user decision
-                                IsConflict = true,
-                                IsNewerButSmaller = true,
-                                ConflictResolution = SyncDirection.Download // Default to keeping Network (Master)
-                            });
-                        }
-                        else
-                        {
-                            changes.Add(new SyncChange
-                            {
-                                RelativePath = relativePath,
-                                LocalModified = localMod,
-                                NetworkModified = networkMod,
-                                LocalSize = localInfo.Length,
-                                NetworkSize = networkInfo.Length,
-                                Direction = SyncDirection.Upload
-                            });
-                        }
                     }
                     else
                     {
