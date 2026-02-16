@@ -115,6 +115,13 @@ public sealed partial class IQCView : Page
                 return;
             }
 
+            if (double.IsNaN(valueBox.Value) || double.IsNaN(meanBox.Value) || double.IsNaN(sdBox.Value))
+            {
+                var errDlg = new ContentDialog { Title = "Error", Content = "Debe ingresar valores numéricos válidos para Valor, Media y DE.", CloseButtonText = "OK", XamlRoot = this.XamlRoot };
+                await errDlg.ShowAsync();
+                return;
+            }
+
             var store = ((App)Application.Current).LocalStore;
             var req = new CreateIQCResultRequest(
                 equipBox.Text.Trim(),

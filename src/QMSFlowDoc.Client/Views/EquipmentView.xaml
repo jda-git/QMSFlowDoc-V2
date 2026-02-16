@@ -46,26 +46,25 @@
                     <Grid Padding="12,0,0,0">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="100" />
+                            <ColumnDefinition Width="100" />
                             <ColumnDefinition Width="*" />
-                            <ColumnDefinition Width="120" />
-                            <ColumnDefinition Width="120" />
+                            <ColumnDefinition Width="100" />
                             <ColumnDefinition Width="120" />
                             <ColumnDefinition Width="100" />
-                            <ColumnDefinition Width="80" />
-                            <ColumnDefinition Width="120" />
+                            <ColumnDefinition Width="100" />
+                            <ColumnDefinition Width="100" />
                             <ColumnDefinition Width="80" />
                             <ColumnDefinition Width="80" />
                         </Grid.ColumnDefinitions>
-                        <Button Content="Etiqueta" Click="Sort_AssetTag_Click" Style="{StaticResource TextBlockButtonStyle}" FontWeight="Bold" Grid.Column="0" />
-                        <Button Content="Nombre" Click="Sort_Name_Click" Style="{StaticResource TextBlockButtonStyle}" FontWeight="Bold" Grid.Column="1" />
-                        <TextBlock Text="Modelo" FontWeight="Bold" Grid.Column="2" VerticalAlignment="Center" Margin="12,0,0,0" />
+                        <Button Content="ID Interno" Click="Sort_Name_Click" Style="{StaticResource TextBlockButtonStyle}" FontWeight="Bold" Grid.Column="0" />
+                        <Button Content="Etiqueta" Click="Sort_AssetTag_Click" Style="{StaticResource TextBlockButtonStyle}" FontWeight="Bold" Grid.Column="1" />
+                        <Button Content="Nombre" Click="Sort_Name_Click" Style="{StaticResource TextBlockButtonStyle}" FontWeight="Bold" Grid.Column="2" />
                         <Button Content="Ubicación" Click="Sort_Location_Click" Style="{StaticResource TextBlockButtonStyle}" FontWeight="Bold" Grid.Column="3" />
-                        <TextBlock Text="Últ. Mant." FontWeight="Bold" Grid.Column="4" VerticalAlignment="Center" Margin="12,0,0,0" />
-                        <TextBlock Text="Tipo Evento" FontWeight="Bold" Grid.Column="5" VerticalAlignment="Center" Margin="12,0,0,0" />
-                        <TextBlock Text="Resultado" FontWeight="Bold" Grid.Column="6" VerticalAlignment="Center" Margin="12,0,0,0" />
-                        <TextBlock Text="Próx. Mant." FontWeight="Bold" Grid.Column="7" VerticalAlignment="Center" Margin="12,0,0,0" />
-                        <TextBlock Text="Estado" FontWeight="Bold" Grid.Column="8" VerticalAlignment="Center" Margin="12,0,0,0" />
-                        <TextBlock Text="QC Hoy" FontWeight="Bold" Grid.Column="9" VerticalAlignment="Center" Margin="12,0,0,0" />
+                        <TextBlock Text="Únt. Mant." FontWeight="Bold" Grid.Column="4" VerticalAlignment="Center" Margin="12,0,0,0" />
+                        <TextBlock Text="Próx. Calib." FontWeight="Bold" Grid.Column="5" VerticalAlignment="Center" Margin="12,0,0,0" />
+                        <TextBlock Text="Estado" FontWeight="Bold" Grid.Column="6" VerticalAlignment="Center" Margin="12,0,0,0" />
+                        <TextBlock Text="Verif." FontWeight="Bold" Grid.Column="7" VerticalAlignment="Center" Margin="12,0,0,0" />
+                        <TextBlock Text="QC Hoy" FontWeight="Bold" Grid.Column="8" VerticalAlignment="Center" Margin="12,0,0,0" />
                     </Grid>
                 </DataTemplate>
             </ListView.HeaderTemplate>
@@ -74,26 +73,29 @@
                     <Grid Padding="0,8">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="100" />
+                            <ColumnDefinition Width="100" />
                             <ColumnDefinition Width="*" />
-                            <ColumnDefinition Width="120" />
-                            <ColumnDefinition Width="120" />
+                            <ColumnDefinition Width="100" />
                             <ColumnDefinition Width="120" />
                             <ColumnDefinition Width="100" />
-                            <ColumnDefinition Width="80" />
-                            <ColumnDefinition Width="120" />
+                            <ColumnDefinition Width="100" />
+                            <ColumnDefinition Width="100" />
                             <ColumnDefinition Width="80" />
                             <ColumnDefinition Width="80" />
                         </Grid.ColumnDefinitions>
-                        <TextBlock Text="{x:Bind AssetTag}" Grid.Column="0" />
-                        <TextBlock Text="{x:Bind Name}" Grid.Column="1" />
-                        <TextBlock Text="{x:Bind Model}" Grid.Column="2" Foreground="Gray" />
+                        <TextBlock Text="{x:Bind InternalId}" Grid.Column="0" FontWeight="SemiBold" />
+                        <TextBlock Text="{x:Bind AssetTag}" Grid.Column="1" Foreground="Gray" />
+                        <TextBlock Text="{x:Bind Name}" Grid.Column="2" />
                         <TextBlock Text="{x:Bind Location}" Grid.Column="3" />
                         <TextBlock Text="{x:Bind LastMaintenanceDateFormatted}" Grid.Column="4" />
-                        <TextBlock Text="{x:Bind LastEventType, FallbackValue='-'}" Grid.Column="5" Foreground="Gray" />
-                        <TextBlock Text="{x:Bind LastOutcome, FallbackValue='-'}" Grid.Column="6" />
-                        <TextBlock Text="{x:Bind NextMaintenanceDue, FallbackValue='-'}" Grid.Column="7" Foreground="Orange" FontWeight="SemiBold" />
-                        <TextBlock Text="{x:Bind StatusFormatted}" Grid.Column="8" />
-                        <TextBlock Text="{x:Bind TodayQCStatus}" Grid.Column="9" FontWeight="Bold" 
+                        <TextBlock Text="{x:Bind NextCalibrationFormatted, FallbackValue='-'}" Grid.Column="5" Foreground="Orange" FontWeight="SemiBold" />
+                        <TextBlock Text="{x:Bind StatusFormatted}" Grid.Column="6" />
+                        <StackPanel Orientation="Horizontal" Spacing="4" Grid.Column="7">
+                             <FontIcon Glyph="{x:Bind IsVerified, Converter={StaticResource BoolToGlyphConverter}, ConverterParameter='Check'}" 
+                                       Foreground="{x:Bind IsVerified, Converter={StaticResource BoolToColorConverter}}" />
+                             <TextBlock Text="{x:Bind IsVerified, Converter={StaticResource BoolToTextConverter}}" />
+                        </StackPanel>
+                        <TextBlock Text="{x:Bind TodayQCStatus}" Grid.Column="8" FontWeight="Bold" 
                                    Foreground="{x:Bind TodayQCColor, Mode=OneWay}" />
                     </Grid>
                 </DataTemplate>
@@ -108,6 +110,8 @@
                     <ComboBoxItem Content="Preventivo" Tag="PREVENTIVE" IsSelected="True" />
                     <ComboBoxItem Content="Correctivo" Tag="CORRECTIVE" />
                     <ComboBoxItem Content="Calibración" Tag="CALIBRATION" />
+                    <ComboBoxItem Content="Verificación" Tag="VERIFICATION" />
+                    <ComboBoxItem Content="Limpieza" Tag="CLEANING" />
                 </ComboBox>
                 <CheckBox x:Name="MaintHasIssuesCheck" Content="¿Hubo incidencias durante el mantenimiento?" />
                 <TextBox x:Name="MaintNotesBox" Header="Notas / Observaciones" AcceptsReturn="True" Height="80" />
@@ -116,6 +120,12 @@
                     <ComboBoxItem Content="Fail" />
                     <ComboBoxItem Content="Pending" />
                 </ComboBox>
+                <TextBlock Text="Certificado / Evidencia" FontWeight="SemiBold" Margin="0,8,0,0" />
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                    <Button Content="Adjuntar Archivo" Click="PickCertificate_Click" />
+                    <TextBlock x:Name="CertificatePathText" Text="Ningún archivo seleccionado" VerticalAlignment="Center" FontStyle="Italic" TextTrimming="CharacterEllipsis" MaxWidth="250" />
+                </StackPanel>
+                
                 <TextBlock Text="Próximo Mantenimiento" FontWeight="SemiBold" Margin="0,8,0,0" />
                 <StackPanel Orientation="Horizontal" Spacing="12">
                     <ComboBox x:Name="NextMaintMonthCombo" Header="Mes" Width="100">

@@ -163,3 +163,29 @@ public class BoolToColorConverter : IValueConverter
     }
     public object ConvertBack(object value, Type targetType, object parameter, string language) => DependencyProperty.UnsetValue;
 }
+
+public class BoolToGlyphConverter : IValueConverter
+{
+    public object Convert(object value, Type targetType, object parameter, string language)
+    {
+        if (value is bool b)
+        {
+            return b ? "\uE73E" : "\uE711"; // Check : Cancel
+        }
+        return "";
+    }
+    public object ConvertBack(object value, Type targetType, object parameter, string language) => DependencyProperty.UnsetValue;
+}
+
+public class BoolToTextConverter : IValueConverter
+{
+    public object Convert(object value, Type targetType, object parameter, string language)
+    {
+        if (value is bool b)
+        {
+            return b ? "Verificado" : "No Verificado";
+        }
+        return "";
+    }
+    public object ConvertBack(object value, Type targetType, object parameter, string language) => DependencyProperty.UnsetValue;
+}

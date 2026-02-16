@@ -101,6 +101,11 @@ public sealed partial class EquipmentView : Page
         NextMaintYearCombo.SelectedIndex = 0;
         NextMaintMonthCombo.SelectedIndex = DateTime.Now.Month - 1;
 
+        NextMaintYearCombo.SelectedIndex = 0;
+        NextMaintMonthCombo.SelectedIndex = DateTime.Now.Month - 1;
+        
+        CertificatePathText.Text = "Ningún archivo seleccionado";
+
         await MaintenanceDialog.ShowAsync();
     }
 
@@ -172,7 +177,8 @@ public sealed partial class EquipmentView : Page
                 hasIssues,
                 nextMaintMonth,
                 nextMaintYear,
-                _authService.CurrentUserId // UserId
+                _authService.CurrentUserId, // UserId
+                CertificatePathText.Text == "Ningún archivo seleccionado" ? null : CertificatePathText.Text
             );
 
             try
@@ -189,7 +195,8 @@ public sealed partial class EquipmentView : Page
                         hasIssues,
                         nextMaintMonth,
                         nextMaintYear,
-                        _authService.CurrentUserId
+                        _authService.CurrentUserId,
+                        CertificatePathText.Text == "Ningún archivo seleccionado" ? null : CertificatePathText.Text
                     );
                     var updated = await _equipmentService.UpdateMaintenanceAsync(updateReq);
                     if (updated != null)
@@ -397,6 +404,42 @@ public sealed partial class EquipmentView : Page
     private void Sort_Location_Click(object sender, RoutedEventArgs e)
     {
          SortList(x => x.Location);
+    }
+    
+    private async void PickCertificate_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            var picker = new Windows.Storage.Pickers.FileOpenPicker();
+            var window = App.MainWindowInstance;
+            if (window != null)
+            {
+                var hWnd = WinRT.Interop.WindowNative.GetWindowHandle(window);
+                WinRT.Interop.InitializeWithWindow.Initialize(picker, hWnd);
+            }
+            else
+            {
+               // Fallback if no window handle? 
+               // For now assume window is there.
+            }
+
+            picker.ViewMode = Windows.Storage.Pickers.PickerViewMode.List;
+            picker.SuggestedStartLocation = Windows.Storage.Pickers.PickerLocationId.DocumentsLibrary;
+            picker.FileTypeFilter.Add(".pdf");
+            picker.FileTypeFilter.Add(".jpg");
+            picker.FileTypeFilter.Add(".png");
+            picker.FileTypeFilter.Add(".jpeg");
+
+            Windows.Storage.StorageFile file = await picker.PickSingleFileAsync();
+            if (file != null)
+            {
+                CertificatePathText.Text = file.Path;
+            }
+        }
+        catch (Exception ex)
+        {
+            await ShowErrorDialog($"Error al seleccionar archivo: {ex.Message}");
+        }
     }
 
     private void SortList<TKey>(Func<EquipmentListDto, TKey> keySelector)

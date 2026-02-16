@@ -791,6 +791,74 @@ public class LocalDocumentStore
 
         // Migrate Methods to Versions (ISO 15189)
         await MigrateMethodsToVersionsAsync(connection);
+
+        // ISO 15189: Complaints Module Expansion
+        await EnsureColumnExists(connection, "Complaints", "ClaimantType", "INTEGER");
+        await EnsureColumnExists(connection, "Complaints", "IsSubstantiated", "INTEGER");
+        await EnsureColumnExists(connection, "Complaints", "ReceiptDate", "TEXT");
+        await EnsureColumnExists(connection, "Complaints", "ReceiptMethod", "TEXT");
+        await EnsureColumnExists(connection, "Complaints", "ClinicalImpact", "INTEGER");
+        await EnsureColumnExists(connection, "Complaints", "RelatedNCId", "TEXT");
+        await EnsureColumnExists(connection, "Complaints", "ResolutionEvidence", "TEXT");
+        await EnsureColumnExists(connection, "Complaints", "EffectivenessDate", "TEXT");
+        await EnsureColumnExists(connection, "Complaints", "EffectivenessVerifiedBy", "TEXT");
+        await EnsureColumnExists(connection, "Complaints", "EffectivenessNotes", "TEXT");
+
+        var createComplaintActionsSql = @"
+            CREATE TABLE IF NOT EXISTS ComplaintActions (
+                Id TEXT PRIMARY KEY,
+                ComplaintId TEXT NOT NULL,
+                ActionType INTEGER NOT NULL,
+                Description TEXT NOT NULL,
+                OwnerUserId TEXT,
+                DueDate TEXT,
+                CompletedDate TEXT,
+                Status INTEGER NOT NULL DEFAULT 0,
+                FOREIGN KEY (ComplaintId) REFERENCES Complaints(Id) ON DELETE CASCADE
+            );";
+        
+        using (var cmd = new SqliteCommand(createComplaintActionsSql, connection))
+        {
+            await cmd.ExecuteNonQueryAsync();
+        }
+
+        // ISO 15189: Equipment Lifecycle Migrations
+        await EnsureColumnExists(connection, "Equipments", "InternalId", "TEXT");
+        await EnsureColumnExists(connection, "Equipments", "SoftwareVersion", "TEXT");
+        await EnsureColumnExists(connection, "Equipments", "FirmwareVersion", "TEXT");
+        await EnsureColumnExists(connection, "Equipments", "ReceptionDate", "TEXT");
+        await EnsureColumnExists(connection, "Equipments", "ReceptionCondition", "TEXT");
+        await EnsureColumnExists(connection, "Equipments", "VerificationDate", "TEXT");
+        await EnsureColumnExists(connection, "Equipments", "IsVerified", "INTEGER");
+        await EnsureColumnExists(connection, "Equipments", "CalibrationFrequencyMonths", "INTEGER");
+        await EnsureColumnExists(connection, "Equipments", "LastCalibration", "TEXT");
+        await EnsureColumnExists(connection, "Equipments", "NextCalibration", "TEXT");
+        await EnsureColumnExists(connection, "Equipments", "ManualPath", "TEXT");
+
+        // Maintenance Events Extensions
+        await EnsureColumnExists(connection, "MaintenanceEvents", "EventType", "INTEGER"); // Ensure exists if it was string or missing
+        await EnsureColumnExists(connection, "MaintenanceEvents", "CertificatePath", "TEXT");
+        await EnsureColumnExists(connection, "MaintenanceEvents", "Cost", "REAL");
+        await EnsureColumnExists(connection, "MaintenanceEvents", "IsEfficiencyCheck", "INTEGER");
+
+        var createEquipmentHistorySql = @"
+            CREATE TABLE IF NOT EXISTS EquipmentHistory (
+                Id TEXT PRIMARY KEY,
+                EquipmentId TEXT NOT NULL,
+                Date TEXT NOT NULL,
+                UserId TEXT NOT NULL,
+                UserName TEXT,
+                ActionType TEXT NOT NULL,
+                Description TEXT,
+                OldValue TEXT,
+                NewValue TEXT,
+                FOREIGN KEY (EquipmentId) REFERENCES Equipments(Id) ON DELETE CASCADE
+            );";
+        
+        using (var cmd = new SqliteCommand(createEquipmentHistorySql, connection))
+        {
+            await cmd.ExecuteNonQueryAsync();
+        }
     }
 
     private async Task MigrateMethodsToVersionsAsync(SqliteConnection connection)
@@ -1667,11 +1735,14 @@ public class LocalDocumentStore
                 list.Add(new EquipmentListDto
                 {
                     Id = Guid.Parse(reader["Id"].ToString()!),
+                    InternalId = reader["InternalId"] == DBNull.Value ? null : reader["InternalId"]?.ToString(),
                     AssetTag = reader["AssetTag"] == DBNull.Value ? null : reader["AssetTag"]?.ToString(),
                     Name = reader["Name"]?.ToString() ?? "Sin nombre",
                     Model = reader["Model"] == DBNull.Value ? null : reader["Model"]?.ToString(),
                     Location = reader["Location"] == DBNull.Value ? null : reader["Location"]?.ToString(),
-                    Status = (EquipmentStatus)Convert.ToInt32(reader["Status"])
+                    Status = (EquipmentStatus)Convert.ToInt32(reader["Status"]),
+                    IsVerified = reader["IsVerified"] != DBNull.Value && Convert.ToInt32(reader["IsVerified"]) == 1,
+                    NextCalibration = reader["NextCalibration"] == DBNull.Value ? null : DateTime.Parse(reader["NextCalibration"].ToString()!)
                 });
             }
             
@@ -1773,6 +1844,7 @@ public class LocalDocumentStore
             return new Equipment
             {
                 Id = Guid.Parse(reader["Id"]?.ToString() ?? Guid.Empty.ToString()),
+                InternalId = reader["InternalId"] == DBNull.Value ? null : reader["InternalId"]?.ToString(),
                 AssetTag = reader["AssetTag"] == DBNull.Value ? null : reader["AssetTag"]?.ToString(),
                 Name = reader["Name"]?.ToString() ?? "Sin nombre",
                 Manufacturer = reader["Manufacturer"] == DBNull.Value ? null : reader["Manufacturer"]?.ToString(),
@@ -1783,7 +1855,16 @@ public class LocalDocumentStore
                 Location = reader["Location"] == DBNull.Value ? null : reader["Location"]?.ToString(),
                 Status = (EquipmentStatus)Convert.ToInt32(reader["Status"]),
                 InstalledAt = reader["InstalledAt"] == DBNull.Value ? null : DateTime.Parse(reader["InstalledAt"]?.ToString() ?? DateTime.MinValue.ToString("o")),
-                Notes = reader["Notes"] == DBNull.Value ? null : reader["Notes"]?.ToString()
+                Notes = reader["Notes"] == DBNull.Value ? null : reader["Notes"]?.ToString(),
+                // ISO 15189 Extensions
+                ReceptionDate = reader["ReceptionDate"] == DBNull.Value ? null : DateTime.Parse(reader["ReceptionDate"]?.ToString() ?? DateTime.MinValue.ToString("o")),
+                ReceptionCondition = reader["ReceptionCondition"] == DBNull.Value ? null : reader["ReceptionCondition"]?.ToString(),
+                VerificationDate = reader["VerificationDate"] == DBNull.Value ? null : DateTime.Parse(reader["VerificationDate"]?.ToString() ?? DateTime.MinValue.ToString("o")),
+                IsVerified = reader["IsVerified"] != DBNull.Value && Convert.ToInt32(reader["IsVerified"]) == 1,
+                CalibrationFrequencyMonths = reader["CalibrationFrequencyMonths"] == DBNull.Value ? null : Convert.ToInt32(reader["CalibrationFrequencyMonths"]),
+                LastCalibration = reader["LastCalibration"] == DBNull.Value ? null : DateTime.Parse(reader["LastCalibration"]?.ToString() ?? DateTime.MinValue.ToString("o")),
+                NextCalibration = reader["NextCalibration"] == DBNull.Value ? null : DateTime.Parse(reader["NextCalibration"]?.ToString() ?? DateTime.MinValue.ToString("o")),
+                ManualPath = reader["ManualPath"] == DBNull.Value ? null : reader["ManualPath"]?.ToString()
             };
         }
         return null;
@@ -1794,11 +1875,12 @@ public class LocalDocumentStore
         using var connection = new SqliteConnection($"Data Source={_dbPath}");
         await connection.OpenAsync();
         
-        var sql = @"INSERT INTO Equipments (Id, AssetTag, Name, Manufacturer, Model, SerialNumber, SoftwareVersion, FirmwareVersion, Location, Status, InstalledAt, Notes)
-                    VALUES ($id, $tag, $name, $manu, $model, $serial, $soft, $firm, $loc, $status, $inst, $notes)";
+        var sql = @"INSERT INTO Equipments (Id, InternalId, AssetTag, Name, Manufacturer, Model, SerialNumber, SoftwareVersion, FirmwareVersion, Location, Status, InstalledAt, Notes, ReceptionDate, ReceptionCondition, VerificationDate, IsVerified, CalibrationFrequencyMonths, LastCalibration, NextCalibration, ManualPath)
+                    VALUES ($id, $intId, $tag, $name, $manu, $model, $serial, $soft, $firm, $loc, $status, $inst, $notes, $recDate, $recCond, $verDate, $isVer, $calFreq, $lastCal, $nextCal, $manPath)";
         
         using var cmd = new SqliteCommand(sql, connection);
         cmd.Parameters.AddWithValue("$id", equipment.Id.ToString());
+        cmd.Parameters.AddWithValue("$intId", equipment.InternalId ?? (object)DBNull.Value);
         cmd.Parameters.AddWithValue("$tag", equipment.AssetTag ?? (object)DBNull.Value);
         cmd.Parameters.AddWithValue("$name", equipment.Name);
         cmd.Parameters.AddWithValue("$manu", equipment.Manufacturer ?? (object)DBNull.Value);
@@ -1811,6 +1893,15 @@ public class LocalDocumentStore
         cmd.Parameters.AddWithValue("$inst", equipment.InstalledAt?.ToString("o") ?? (object)DBNull.Value);
         cmd.Parameters.AddWithValue("$notes", equipment.Notes ?? (object)DBNull.Value);
         
+        cmd.Parameters.AddWithValue("$recDate", equipment.ReceptionDate?.ToString("o") ?? (object)DBNull.Value);
+        cmd.Parameters.AddWithValue("$recCond", equipment.ReceptionCondition ?? (object)DBNull.Value);
+        cmd.Parameters.AddWithValue("$verDate", equipment.VerificationDate?.ToString("o") ?? (object)DBNull.Value);
+        cmd.Parameters.AddWithValue("$isVer", equipment.IsVerified ? 1 : 0);
+        cmd.Parameters.AddWithValue("$calFreq", equipment.CalibrationFrequencyMonths ?? (object)DBNull.Value);
+        cmd.Parameters.AddWithValue("$lastCal", equipment.LastCalibration?.ToString("o") ?? (object)DBNull.Value);
+        cmd.Parameters.AddWithValue("$nextCal", equipment.NextCalibration?.ToString("o") ?? (object)DBNull.Value);
+        cmd.Parameters.AddWithValue("$manPath", equipment.ManualPath ?? (object)DBNull.Value);
+        
         await cmd.ExecuteNonQueryAsync();
     }
 
@@ -1819,12 +1910,15 @@ public class LocalDocumentStore
         using var connection = new SqliteConnection($"Data Source={_dbPath}");
         await connection.OpenAsync();
 
-        var sql = @"UPDATE Equipments SET AssetTag=$tag, Name=$name, Manufacturer=$manu, Model=$model, SerialNumber=$serial, 
-                    SoftwareVersion=$soft, FirmwareVersion=$firm, Location=$loc, InstalledAt=$inst 
+        var sql = @"UPDATE Equipments SET InternalId=$intId, AssetTag=$tag, Name=$name, Manufacturer=$manu, Model=$model, SerialNumber=$serial, 
+                    SoftwareVersion=$soft, FirmwareVersion=$firm, Location=$loc, InstalledAt=$inst,
+                    ReceptionDate=$recDate, ReceptionCondition=$recCond, VerificationDate=$verDate, IsVerified=$isVer,
+                    CalibrationFrequencyMonths=$calFreq, LastCalibration=$lastCal, NextCalibration=$nextCal, ManualPath=$manPath
                     WHERE Id=$id";
         
         using var cmd = new SqliteCommand(sql, connection);
         cmd.Parameters.AddWithValue("$id", request.Id.ToString());
+        cmd.Parameters.AddWithValue("$intId", request.InternalId ?? (object)DBNull.Value);
         cmd.Parameters.AddWithValue("$tag", request.AssetTag ?? (object)DBNull.Value);
         cmd.Parameters.AddWithValue("$name", request.Name);
         cmd.Parameters.AddWithValue("$manu", request.Manufacturer ?? (object)DBNull.Value);
@@ -1834,6 +1928,15 @@ public class LocalDocumentStore
         cmd.Parameters.AddWithValue("$firm", request.FirmwareVersion ?? (object)DBNull.Value);
         cmd.Parameters.AddWithValue("$loc", request.Location ?? (object)DBNull.Value);
         cmd.Parameters.AddWithValue("$inst", request.InstalledAt?.ToString("o") ?? (object)DBNull.Value);
+        
+        cmd.Parameters.AddWithValue("$recDate", request.ReceptionDate?.ToString("o") ?? (object)DBNull.Value);
+        cmd.Parameters.AddWithValue("$recCond", request.ReceptionCondition ?? (object)DBNull.Value);
+        cmd.Parameters.AddWithValue("$verDate", request.VerificationDate?.ToString("o") ?? (object)DBNull.Value);
+        cmd.Parameters.AddWithValue("$isVer", request.IsVerified ? 1 : 0);
+        cmd.Parameters.AddWithValue("$calFreq", request.CalibrationFrequencyMonths ?? (object)DBNull.Value);
+        cmd.Parameters.AddWithValue("$lastCal", request.LastCalibration?.ToString("o") ?? (object)DBNull.Value);
+        cmd.Parameters.AddWithValue("$nextCal", request.NextCalibration?.ToString("o") ?? (object)DBNull.Value);
+        cmd.Parameters.AddWithValue("$manPath", request.ManualPath ?? (object)DBNull.Value);
         
         await cmd.ExecuteNonQueryAsync();
     }
@@ -1849,6 +1952,57 @@ public class LocalDocumentStore
         return await cmd.ExecuteNonQueryAsync() > 0;
     }
 
+    public async Task AddEquipmentHistoryAsync(EquipmentHistory history)
+    {
+        using var connection = new SqliteConnection($"Data Source={_dbPath}");
+        await connection.OpenAsync();
+
+        var sql = @"INSERT INTO EquipmentHistory (Id, EquipmentId, Date, UserId, UserName, ActionType, Description, OldValue, NewValue)
+                    VALUES ($id, $eid, $date, $uid, $uname, $action, $desc, $old, $new)";
+
+        using var cmd = new SqliteCommand(sql, connection);
+        cmd.Parameters.AddWithValue("$id", history.Id.ToString());
+        cmd.Parameters.AddWithValue("$eid", history.EquipmentId.ToString());
+        cmd.Parameters.AddWithValue("$date", history.Date.ToString("o"));
+        cmd.Parameters.AddWithValue("$uid", history.UserId.ToString());
+        cmd.Parameters.AddWithValue("$uname", history.UserName ?? (object)DBNull.Value);
+        cmd.Parameters.AddWithValue("$action", history.ActionType);
+        cmd.Parameters.AddWithValue("$desc", history.Description ?? (object)DBNull.Value);
+        cmd.Parameters.AddWithValue("$old", history.OldValue ?? (object)DBNull.Value);
+        cmd.Parameters.AddWithValue("$new", history.NewValue ?? (object)DBNull.Value);
+
+        await cmd.ExecuteNonQueryAsync();
+    }
+
+    public async Task<List<EquipmentHistory>> GetEquipmentHistoryAsync(Guid equipmentId)
+    {
+        using var connection = new SqliteConnection($"Data Source={_dbPath}");
+        await connection.OpenAsync();
+
+        var sql = "SELECT * FROM EquipmentHistory WHERE EquipmentId = $eid ORDER BY Date DESC";
+        using var cmd = new SqliteCommand(sql, connection);
+        cmd.Parameters.AddWithValue("$eid", equipmentId.ToString());
+
+        using var reader = await cmd.ExecuteReaderAsync();
+        var list = new List<EquipmentHistory>();
+        while (await reader.ReadAsync())
+        {
+            list.Add(new EquipmentHistory
+            {
+                Id = Guid.Parse(reader["Id"].ToString()!),
+                EquipmentId = Guid.Parse(reader["EquipmentId"].ToString()!),
+                Date = DateTime.Parse(reader["Date"].ToString()!),
+                UserId = Guid.Parse(reader["UserId"].ToString()!),
+                UserName = reader["UserName"] == DBNull.Value ? null : reader["UserName"].ToString(),
+                ActionType = reader["ActionType"].ToString()!,
+                Description = reader["Description"] == DBNull.Value ? null : reader["Description"].ToString(),
+                OldValue = reader["OldValue"] == DBNull.Value ? null : reader["OldValue"].ToString(),
+                NewValue = reader["NewValue"] == DBNull.Value ? null : reader["NewValue"].ToString()
+            });
+        }
+        return list;
+    }
+
     public async Task UpdateMaintenanceAsync(UpdateMaintenanceRequest request)
     {
         using var connection = new SqliteConnection($"Data Source={_dbPath}");
@@ -1856,7 +2010,8 @@ public class LocalDocumentStore
 
         var sql = @"UPDATE MaintenanceEvents 
                     SET EventType=$type, Outcome=$outcome, Notes=$notes, PerformedAt=$date, PerformedByUserId=$user,
-                        HasIssues=$issue, NextMaintenanceMonth=$nm, NextMaintenanceYear=$ny
+                        HasIssues=$issue, NextMaintenanceMonth=$nm, NextMaintenanceYear=$ny,
+                        CertificatePath=$cert, Cost=$cost, IsEfficiencyCheck=$eff
                     WHERE Id=$id";
         
         using var cmd = new SqliteCommand(sql, connection);
@@ -1870,7 +2025,46 @@ public class LocalDocumentStore
         cmd.Parameters.AddWithValue("$nm", request.NextMaintenanceMonth ?? (object)DBNull.Value);
         cmd.Parameters.AddWithValue("$ny", request.NextMaintenanceYear ?? (object)DBNull.Value);
         
+        cmd.Parameters.AddWithValue("$cert", request.CertificatePath ?? (object)DBNull.Value);
+        cmd.Parameters.AddWithValue("$cost", request.Cost ?? (object)DBNull.Value);
+        cmd.Parameters.AddWithValue("$eff", request.IsEfficiencyCheck ? 1 : 0);
+        
         await cmd.ExecuteNonQueryAsync();
+
+        // Business Rule: Update Equipment Status based on Maintenance Outcome
+        var status = -1; // No change
+        if (request.HasIssues == true || request.Outcome == "Fail")
+        {
+            status = (int)EquipmentStatus.OUT_OF_SERVICE;
+        }
+        else if (request.EventType == MaintenanceEventType.VERIFICATION && request.Outcome == "Pass")
+        {
+             status = (int)EquipmentStatus.ACTIVE;
+        }
+
+        if (status != -1)
+        {
+            var updateStatusSql = "UPDATE Equipments SET Status = $status WHERE Id = $eid";
+            using var statusCmd = new SqliteCommand(updateStatusSql, connection);
+            statusCmd.Parameters.AddWithValue("$status", status);
+            statusCmd.Parameters.AddWithValue("$eid", request.EquipmentId.ToString());
+            await statusCmd.ExecuteNonQueryAsync();
+            
+            // Log Status Change
+            var histSql = @"INSERT INTO EquipmentHistory (Id, EquipmentId, Date, UserId, UserName, ActionType, Description, OldValue, NewValue)
+                    VALUES ($hid, $heid, $hdate, $huid, $huname, $haction, $hdesc, $hold, $hnew)";
+            using var histCmd = new SqliteCommand(histSql, connection);
+            histCmd.Parameters.AddWithValue("$hid", Guid.NewGuid().ToString());
+            histCmd.Parameters.AddWithValue("$heid", request.EquipmentId.ToString());
+            histCmd.Parameters.AddWithValue("$hdate", DateTime.UtcNow.ToString("o"));
+            histCmd.Parameters.AddWithValue("$huid", request.PerformedByUserId?.ToString() ?? (object)DBNull.Value);
+            histCmd.Parameters.AddWithValue("$huname", "System/Auto");
+            histCmd.Parameters.AddWithValue("$haction", "STATUS_CHANGE");
+            histCmd.Parameters.AddWithValue("$hdesc", $"Automatic status update due to maintenance event: {request.EventType}");
+            histCmd.Parameters.AddWithValue("$hold", "Unknown"); 
+            histCmd.Parameters.AddWithValue("$hnew", ((EquipmentStatus)status).ToString());
+            await histCmd.ExecuteNonQueryAsync();
+        }
     }
 
 
@@ -1912,15 +2106,22 @@ public async Task<DashboardDataDto> GetDashboardDataAsync()
         var currentMonth = now.Month;
         var maintSql = @"
             SELECT COUNT(*) 
-            FROM MaintenanceEvents m
+            FROM Equipments e
             WHERE 
-               m.PerformedAt = (SELECT MAX(sub.PerformedAt) FROM MaintenanceEvents sub WHERE sub.EquipmentId = m.EquipmentId)
-               AND
-               (
-                  (m.NextMaintenanceYear < $year) 
-                  OR 
-                  (m.NextMaintenanceYear = $year AND m.NextMaintenanceMonth <= $month)
-               )
+               (e.NextCalibration IS NOT NULL AND date(e.NextCalibration) <= date('now', '+30 days'))
+               OR
+               (e.Id IN (
+                   SELECT m.EquipmentId 
+                   FROM MaintenanceEvents m
+                   WHERE 
+                      m.PerformedAt = (SELECT MAX(sub.PerformedAt) FROM MaintenanceEvents sub WHERE sub.EquipmentId = m.EquipmentId)
+                      AND
+                      (
+                         (m.NextMaintenanceYear < $year) 
+                         OR 
+                         (m.NextMaintenanceYear = $year AND m.NextMaintenanceMonth <= $month)
+                      )
+               ))
         ";
         using (var cmdM = new SqliteCommand(maintSql, connection))
         {
@@ -2134,8 +2335,8 @@ public async Task<DashboardDataDto> GetDashboardDataAsync()
         using var connection = new SqliteConnection($"Data Source={_dbPath}");
         await connection.OpenAsync();
 
-        var sql = @"INSERT INTO MaintenanceEvents (Id, EquipmentId, PlanId, PerformedAt, PerformedByUserId, EventType, Outcome, Notes, HasIssues, NextMaintenanceMonth, NextMaintenanceYear)
-                    VALUES ($id, $eid, $pid, $at, $user, $type, $outcome, $notes, $issue, $nm, $ny)";
+        var sql = @"INSERT INTO MaintenanceEvents (Id, EquipmentId, PlanId, PerformedAt, PerformedByUserId, EventType, Outcome, Notes, HasIssues, NextMaintenanceMonth, NextMaintenanceYear, CertificatePath, Cost, IsEfficiencyCheck)
+                    VALUES ($id, $eid, $pid, $at, $user, $type, $outcome, $notes, $issue, $nm, $ny, $cert, $cost, $eff)";
         
         using var cmd = new SqliteCommand(sql, connection);
         cmd.Parameters.AddWithValue("$id", Guid.NewGuid().ToString());
@@ -2150,7 +2351,46 @@ public async Task<DashboardDataDto> GetDashboardDataAsync()
         cmd.Parameters.AddWithValue("$nm", request.NextMaintenanceMonth ?? (object)DBNull.Value);
         cmd.Parameters.AddWithValue("$ny", request.NextMaintenanceYear ?? (object)DBNull.Value);
         
+        cmd.Parameters.AddWithValue("$cert", request.CertificatePath ?? (object)DBNull.Value);
+        cmd.Parameters.AddWithValue("$cost", request.Cost ?? (object)DBNull.Value);
+        cmd.Parameters.AddWithValue("$eff", request.IsEfficiencyCheck ? 1 : 0);
+        
         await cmd.ExecuteNonQueryAsync();
+
+        // Business Rule: Update Equipment Status based on Maintenance Outcome
+        var status = -1; // No change
+        if (request.HasIssues == true || request.Outcome == "Fail")
+        {
+            status = (int)EquipmentStatus.OUT_OF_SERVICE;
+        }
+        else if (request.EventType == MaintenanceEventType.VERIFICATION && request.Outcome == "Pass")
+        {
+             status = (int)EquipmentStatus.ACTIVE;
+        }
+
+        if (status != -1)
+        {
+            var updateStatusSql = "UPDATE Equipments SET Status = $status WHERE Id = $eid";
+            using var statusCmd = new SqliteCommand(updateStatusSql, connection);
+            statusCmd.Parameters.AddWithValue("$status", status);
+            statusCmd.Parameters.AddWithValue("$eid", request.EquipmentId.ToString());
+            await statusCmd.ExecuteNonQueryAsync();
+
+            // Log Status Change
+             var histSql = @"INSERT INTO EquipmentHistory (Id, EquipmentId, Date, UserId, UserName, ActionType, Description, OldValue, NewValue)
+                    VALUES ($hid, $heid, $hdate, $huid, $huname, $haction, $hdesc, $hold, $hnew)";
+            using var histCmd = new SqliteCommand(histSql, connection);
+            histCmd.Parameters.AddWithValue("$hid", Guid.NewGuid().ToString());
+            histCmd.Parameters.AddWithValue("$heid", request.EquipmentId.ToString());
+            histCmd.Parameters.AddWithValue("$hdate", DateTime.UtcNow.ToString("o"));
+            histCmd.Parameters.AddWithValue("$huid", request.UserId?.ToString() ?? (object)DBNull.Value);
+            histCmd.Parameters.AddWithValue("$huname", "System/Auto");
+            histCmd.Parameters.AddWithValue("$haction", "STATUS_CHANGE");
+            histCmd.Parameters.AddWithValue("$hdesc", $"Automatic status update due to maintenance event: {request.EventType}");
+            histCmd.Parameters.AddWithValue("$hold", "Unknown"); 
+            histCmd.Parameters.AddWithValue("$hnew", ((EquipmentStatus)status).ToString());
+            await histCmd.ExecuteNonQueryAsync();
+        }
     }
     
     // RegisterDailyQCAsync etc.
@@ -5351,6 +5591,11 @@ public async Task<DashboardDataDto> GetDashboardDataAsync()
 
     public async Task<IQCResult> CreateIQCResultAsync(CreateIQCResultRequest req)
     {
+        if (double.IsNaN(req.Value) || double.IsNaN(req.Mean) || double.IsNaN(req.SD))
+        {
+             throw new ArgumentException("IQC Values (Value, Mean, SD) cannot be NaN.");
+        }
+
         using var connection = new SqliteConnection($"Data Source={_dbPath}");
         await connection.OpenAsync();
 
@@ -5414,13 +5659,56 @@ public async Task<DashboardDataDto> GetDashboardDataAsync()
         return list;
     }
 
+    public async Task<Complaint?> GetComplaintByIdAsync(Guid id)
+    {
+        using var connection = new SqliteConnection($"Data Source={_dbPath}");
+        await connection.OpenAsync();
+        var sql = "SELECT * FROM Complaints WHERE Id = $id";
+        using var cmd = new SqliteCommand(sql, connection);
+        cmd.Parameters.AddWithValue("$id", id.ToString());
+        using var reader = await cmd.ExecuteReaderAsync();
+        if (await reader.ReadAsync())
+        {
+            var c = new Complaint
+            {
+                Id = Guid.Parse(reader["Id"].ToString()!),
+                Date = DateTime.Parse(reader["Date"].ToString()!),
+                Source = reader["Source"].ToString()!,
+                Description = reader["Description"].ToString()!,
+                Category = (ComplaintCategory)Convert.ToInt32(reader["Category"]),
+                Status = (ComplaintStatus)Convert.ToInt32(reader["Status"]),
+                InvestigationResult = reader["InvestigationResult"] == DBNull.Value ? null : reader["InvestigationResult"].ToString(),
+                CorrectiveAction = reader["CorrectiveAction"] == DBNull.Value ? null : reader["CorrectiveAction"].ToString(),
+                ClosedAt = reader["ClosedAt"] == DBNull.Value ? null : DateTime.Parse(reader["ClosedAt"].ToString()!),
+                
+                // ISO 15189 Extensions
+                ClaimantType = reader["ClaimantType"] == DBNull.Value ? ClaimantType.OTHER : (ClaimantType)Convert.ToInt32(reader["ClaimantType"]),
+                IsSubstantiated = reader["IsSubstantiated"] != DBNull.Value && Convert.ToInt32(reader["IsSubstantiated"]) == 1,
+                ReceiptDate = reader["ReceiptDate"] == DBNull.Value ? null : DateTime.Parse(reader["ReceiptDate"].ToString()!),
+                ReceiptMethod = reader["ReceiptMethod"] == DBNull.Value ? null : reader["ReceiptMethod"].ToString(),
+                ClinicalImpact = reader["ClinicalImpact"] == DBNull.Value ? ClinicalImpact.NONE : (ClinicalImpact)Convert.ToInt32(reader["ClinicalImpact"]),
+                RelatedNCId = reader["RelatedNCId"] == DBNull.Value ? null : Guid.Parse(reader["RelatedNCId"].ToString()!),
+                ResolutionEvidence = reader["ResolutionEvidence"] == DBNull.Value ? null : reader["ResolutionEvidence"].ToString(),
+                EffectivenessDate = reader["EffectivenessDate"] == DBNull.Value ? null : DateTime.Parse(reader["EffectivenessDate"].ToString()!),
+                EffectivenessVerifiedBy = reader["EffectivenessVerifiedBy"] == DBNull.Value ? null : reader["EffectivenessVerifiedBy"].ToString(),
+                EffectivenessNotes = reader["EffectivenessNotes"] == DBNull.Value ? null : reader["EffectivenessNotes"].ToString()
+            };
+
+            // Load Actions
+            c.Actions = await GetComplaintActionsAsync(c.Id);
+            return c;
+        }
+        return null;
+    }
+
     public async Task<Complaint> CreateComplaintAsync(CreateComplaintRequest req)
     {
         using var connection = new SqliteConnection($"Data Source={_dbPath}");
         await connection.OpenAsync();
         var id = Guid.NewGuid();
-        var sql = @"INSERT INTO Complaints (Id, Date, Source, Description, Category, InvestigationResult, CorrectiveAction, Status)
-                    VALUES ($id, $date, $source, $desc, $cat, $inv, $action, 0)";
+        // Insert with default values for new fields
+        var sql = @"INSERT INTO Complaints (Id, Date, Source, Description, Category, InvestigationResult, CorrectiveAction, Status, ClaimantType, IsSubstantiated, ClinicalImpact)
+                    VALUES ($id, $date, $source, $desc, $cat, $inv, $action, 0, 4, 0, 0)";
         using var cmd = new SqliteCommand(sql, connection);
         cmd.Parameters.AddWithValue("$id", id.ToString());
         cmd.Parameters.AddWithValue("$date", DateTime.UtcNow.ToString("o"));
@@ -5434,6 +5722,42 @@ public async Task<DashboardDataDto> GetDashboardDataAsync()
         return new Complaint { Id = id, Date = DateTime.UtcNow, Source = req.Source, Description = req.Description, Category = req.Category };
     }
 
+    public async Task UpdateComplaintAsync(Complaint c)
+    {
+        using var connection = new SqliteConnection($"Data Source={_dbPath}");
+        await connection.OpenAsync();
+        var sql = @"UPDATE Complaints SET 
+                    Source=$source, Description=$desc, Category=$cat, Status=$status,
+                    InvestigationResult=$inv, CorrectiveAction=$action, ClosedAt=$closed,
+                    ClaimantType=$ctype, IsSubstantiated=$subst, ReceiptDate=$rcptDate, ReceiptMethod=$rcptMethod,
+                    ClinicalImpact=$impact, RelatedNCId=$ncid, ResolutionEvidence=$evidence,
+                    EffectivenessDate=$effDate, EffectivenessVerifiedBy=$effBy, EffectivenessNotes=$effNotes
+                    WHERE Id=$id";
+        
+        using var cmd = new SqliteCommand(sql, connection);
+        cmd.Parameters.AddWithValue("$id", c.Id.ToString());
+        cmd.Parameters.AddWithValue("$source", c.Source);
+        cmd.Parameters.AddWithValue("$desc", c.Description);
+        cmd.Parameters.AddWithValue("$cat", (int)c.Category);
+        cmd.Parameters.AddWithValue("$status", (int)c.Status);
+        cmd.Parameters.AddWithValue("$inv", (object?)c.InvestigationResult ?? DBNull.Value);
+        cmd.Parameters.AddWithValue("$action", (object?)c.CorrectiveAction ?? DBNull.Value);
+        cmd.Parameters.AddWithValue("$closed", c.ClosedAt?.ToString("o") ?? (object)DBNull.Value);
+        
+        cmd.Parameters.AddWithValue("$ctype", (int)c.ClaimantType);
+        cmd.Parameters.AddWithValue("$subst", c.IsSubstantiated ? 1 : 0);
+        cmd.Parameters.AddWithValue("$rcptDate", c.ReceiptDate?.ToString("o") ?? (object)DBNull.Value);
+        cmd.Parameters.AddWithValue("$rcptMethod", c.ReceiptMethod ?? (object)DBNull.Value);
+        cmd.Parameters.AddWithValue("$impact", (int)c.ClinicalImpact);
+        cmd.Parameters.AddWithValue("$ncid", c.RelatedNCId?.ToString() ?? (object)DBNull.Value);
+        cmd.Parameters.AddWithValue("$evidence", c.ResolutionEvidence ?? (object)DBNull.Value);
+        cmd.Parameters.AddWithValue("$effDate", c.EffectivenessDate?.ToString("o") ?? (object)DBNull.Value);
+        cmd.Parameters.AddWithValue("$effBy", c.EffectivenessVerifiedBy ?? (object)DBNull.Value);
+        cmd.Parameters.AddWithValue("$effNotes", c.EffectivenessNotes ?? (object)DBNull.Value);
+        
+        await cmd.ExecuteNonQueryAsync();
+    }
+
     public async Task<bool> UpdateComplaintStatusAsync(Guid id, ComplaintStatus status)
     {
         using var connection = new SqliteConnection($"Data Source={_dbPath}");
@@ -5444,6 +5768,79 @@ public async Task<DashboardDataDto> GetDashboardDataAsync()
         cmd.Parameters.AddWithValue("$id", id.ToString());
         cmd.Parameters.AddWithValue("$status", (int)status);
         return await cmd.ExecuteNonQueryAsync() > 0;
+    }
+
+    // --- Complaint Actions ---
+
+    public async Task<List<ComplaintAction>> GetComplaintActionsAsync(Guid complaintId)
+    {
+        using var connection = new SqliteConnection($"Data Source={_dbPath}");
+        await connection.OpenAsync();
+        var list = new List<ComplaintAction>();
+        var sql = "SELECT * FROM ComplaintActions WHERE ComplaintId = $cid ORDER BY DueDate";
+        using var cmd = new SqliteCommand(sql, connection);
+        cmd.Parameters.AddWithValue("$cid", complaintId.ToString());
+        using var reader = await cmd.ExecuteReaderAsync();
+        while (await reader.ReadAsync())
+        {
+            list.Add(new ComplaintAction
+            {
+                Id = Guid.Parse(reader["Id"].ToString()!),
+                ComplaintId = Guid.Parse(reader["ComplaintId"].ToString()!),
+                ActionType = (ComplaintActionType)Convert.ToInt32(reader["ActionType"]),
+                Description = reader["Description"].ToString()!,
+                OwnerUserId = reader["OwnerUserId"] == DBNull.Value ? null : Guid.Parse(reader["OwnerUserId"].ToString()!),
+                DueDate = reader["DueDate"] == DBNull.Value ? null : DateTime.Parse(reader["DueDate"].ToString()!),
+                CompletedDate = reader["CompletedDate"] == DBNull.Value ? null : DateTime.Parse(reader["CompletedDate"].ToString()!),
+                Status = (ActionStatus)Convert.ToInt32(reader["Status"])
+            });
+        }
+        return list;
+    }
+
+    public async Task AddComplaintActionAsync(ComplaintAction action)
+    {
+        using var connection = new SqliteConnection($"Data Source={_dbPath}");
+        await connection.OpenAsync();
+        var sql = @"INSERT INTO ComplaintActions (Id, ComplaintId, ActionType, Description, OwnerUserId, DueDate, CompletedDate, Status)
+                    VALUES ($id, $cid, $type, $desc, $owner, $due, $completed, $status)";
+        using var cmd = new SqliteCommand(sql, connection);
+        cmd.Parameters.AddWithValue("$id", action.Id.ToString());
+        cmd.Parameters.AddWithValue("$cid", action.ComplaintId.ToString());
+        cmd.Parameters.AddWithValue("$type", (int)action.ActionType);
+        cmd.Parameters.AddWithValue("$desc", action.Description);
+        cmd.Parameters.AddWithValue("$owner", action.OwnerUserId?.ToString() ?? (object)DBNull.Value);
+        cmd.Parameters.AddWithValue("$due", action.DueDate?.ToString("o") ?? (object)DBNull.Value);
+        cmd.Parameters.AddWithValue("$completed", action.CompletedDate?.ToString("o") ?? (object)DBNull.Value);
+        cmd.Parameters.AddWithValue("$status", (int)action.Status);
+        await cmd.ExecuteNonQueryAsync();
+    }
+
+    public async Task UpdateComplaintActionAsync(ComplaintAction action)
+    {
+        using var connection = new SqliteConnection($"Data Source={_dbPath}");
+        await connection.OpenAsync();
+        var sql = @"UPDATE ComplaintActions SET 
+                    ActionType=$type, Description=$desc, OwnerUserId=$owner, DueDate=$due, CompletedDate=$completed, Status=$status
+                    WHERE Id=$id";
+        using var cmd = new SqliteCommand(sql, connection);
+        cmd.Parameters.AddWithValue("$id", action.Id.ToString());
+        cmd.Parameters.AddWithValue("$type", (int)action.ActionType);
+        cmd.Parameters.AddWithValue("$desc", action.Description);
+        cmd.Parameters.AddWithValue("$owner", action.OwnerUserId?.ToString() ?? (object)DBNull.Value);
+        cmd.Parameters.AddWithValue("$due", action.DueDate?.ToString("o") ?? (object)DBNull.Value);
+        cmd.Parameters.AddWithValue("$completed", action.CompletedDate?.ToString("o") ?? (object)DBNull.Value);
+        cmd.Parameters.AddWithValue("$status", (int)action.Status);
+        await cmd.ExecuteNonQueryAsync();
+    }
+
+    public async Task DeleteComplaintActionAsync(Guid id)
+    {
+        using var connection = new SqliteConnection($"Data Source={_dbPath}");
+        await connection.OpenAsync();
+        using var cmd = new SqliteCommand("DELETE FROM ComplaintActions WHERE Id=$id", connection);
+        cmd.Parameters.AddWithValue("$id", id.ToString());
+        await cmd.ExecuteNonQueryAsync();
     }
 
     #endregion

@@ -18,6 +18,8 @@
             <local:RiskScoreColorConverter x:Key="RiskScoreColorConverter" />
             <local:DateFormatConverter x:Key="DateFormatConverter" />
             <local:BoolToColorConverter x:Key="BoolToColorConverter" />
+            <local:BoolToGlyphConverter x:Key="BoolToGlyphConverter" />
+            <local:BoolToTextConverter x:Key="BoolToTextConverter" />
         </ResourceDictionary>
     </Application.Resources>
 </Application>

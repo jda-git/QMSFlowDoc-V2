@@ -97,7 +97,7 @@ public class SyncScheduler : IDisposable
 
         try
         {
-            var startTime = DateTime.Now;
+            var startTime = DateTime.UtcNow;
             var result = new SyncResult { Success = true };
 
             // Intentar ejecutar sincronización principal
@@ -139,8 +139,8 @@ public class SyncScheduler : IDisposable
                 result.ErrorMessage = (result.ErrorMessage ?? "") + " | Queue error: " + ex.Message;
             }
 
-            result.Duration = DateTime.Now - startTime;
-            LastSyncTime = DateTime.Now;
+            result.Duration = DateTime.UtcNow - startTime;
+            LastSyncTime = DateTime.UtcNow;
             LastSyncResult = result;
 
             // Notificar resultado

@@ -6,6 +6,7 @@ namespace QMSFlowDoc.Shared.DTOs;
 public class EquipmentListDto
 {
     public Guid Id { get; set; }
+    public string? InternalId { get; set; }
     public string? AssetTag { get; set; }
     public string Name { get; set; } = string.Empty;
     public string? Model { get; set; }
@@ -13,6 +14,9 @@ public class EquipmentListDto
     public string? FirmwareVersion { get; set; } // ISP 15189
     public string? Location { get; set; }
     public EquipmentStatus Status { get; set; }
+    public bool IsVerified { get; set; }
+    public DateTime? NextCalibration { get; set; }
+    
     public Guid? LastMaintenanceEventId { get; set; }
     public DateTime? LastMaintenanceAt { get; set; }
     public string? LastEventType { get; set; }
@@ -22,20 +26,16 @@ public class EquipmentListDto
     public string? TodayQCColor { get; set; }
 
     public EquipmentListDto() { }
-    public EquipmentListDto(Guid id, string? tag, string name, string? model, string? sw, string? fw, string? loc, EquipmentStatus status, Guid? lastId, DateTime? last, string? eventType, string? outcome, string? next, string? todayQC, string? todayColor)
-    {
-        Id = id; AssetTag = tag; Name = name; Model = model; SoftwareVersion = sw; FirmwareVersion = fw; Location = loc; Status = status;
-        LastMaintenanceEventId = lastId; LastMaintenanceAt = last; LastEventType = eventType; LastOutcome = outcome; NextMaintenanceDue = next;
-        TodayQCStatus = todayQC;
-        TodayQCColor = todayColor;
-    }
-
+    // Constructor simplified or ignored as JSON deserialization usually handles it
+    
     // Helper properties for UI binding
     public string LastMaintenanceDateFormatted => LastMaintenanceAt?.ToString("dd/MM/yyyy") ?? "-";
     public string StatusFormatted => Status.ToString();
+    public string NextCalibrationFormatted => NextCalibration?.ToString("dd/MM/yyyy") ?? "-";
 }
 
 public record CreateEquipmentRequest(
+    string? InternalId,
     string? AssetTag,
     string Name,
     string? Manufacturer,
@@ -44,11 +44,16 @@ public record CreateEquipmentRequest(
     string? SoftwareVersion,
     string? FirmwareVersion,
     string? Location,
-    DateTime? InstalledAt
+    DateTime? InstalledAt,
+    DateTime? ReceptionDate,
+    string? ReceptionCondition,
+    int? CalibrationFrequencyMonths,
+    string? ManualPath
 );
 
 public record UpdateEquipmentRequest(
     Guid Id,
+    string? InternalId,
     string? AssetTag,
     string Name,
     string? Manufacturer,
@@ -57,7 +62,15 @@ public record UpdateEquipmentRequest(
     string? SoftwareVersion,
     string? FirmwareVersion,
     string? Location,
-    DateTime? InstalledAt
+    DateTime? InstalledAt,
+    DateTime? ReceptionDate,
+    string? ReceptionCondition,
+    DateTime? VerificationDate,
+    bool IsVerified,
+    int? CalibrationFrequencyMonths,
+    DateTime? LastCalibration,
+    DateTime? NextCalibration,
+    string? ManualPath
 );
 
 public record RegisterMaintenanceRequest(
@@ -71,7 +84,10 @@ public record RegisterMaintenanceRequest(
     bool? HasIssues,
     int? NextMaintenanceMonth,
     int? NextMaintenanceYear,
-    Guid? UserId = null // Added for local tracking
+    Guid? UserId = null,
+    string? CertificatePath = null,
+    decimal? Cost = null,
+    bool IsEfficiencyCheck = false
 );
 
 public record UpdateMaintenanceRequest(
@@ -84,7 +100,10 @@ public record UpdateMaintenanceRequest(
     bool? HasIssues,
     int? NextMaintenanceMonth,
     int? NextMaintenanceYear,
-    Guid? PerformedByUserId
+    Guid? PerformedByUserId,
+    string? CertificatePath = null,
+    decimal? Cost = null,
+    bool IsEfficiencyCheck = false
 );
 
 public record CreateDailyQCRequest(

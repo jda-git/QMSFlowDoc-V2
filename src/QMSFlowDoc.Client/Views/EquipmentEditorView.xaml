@@ -8,35 +8,94 @@
     mc:Ignorable="d"
     Background="{ThemeResource ApplicationPageBackgroundThemeBrush}">
 
-    <ScrollViewer Padding="24">
-        <StackPanel Spacing="24" MaxWidth="600" HorizontalAlignment="Left">
-            <StackPanel Orientation="Horizontal" Spacing="12">
-                <Button Click="Back_Click">
-                    <FontIcon Glyph="&#xE72B;" />
-                </Button>
-                <TextBlock Text="Nuevo Equipo" Style="{StaticResource TitleTextBlockStyle}" />
-            </StackPanel>
+    <Grid Background="{ThemeResource ApplicationPageBackgroundThemeBrush}">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
 
-            <Grid ColumnDefinitions="*, *" RowDefinitions="Auto, Auto, Auto, Auto, Auto" ColumnSpacing="16" RowSpacing="16">
-                <TextBox x:Name="NameBox" Header="Nombre del Equipo" PlaceholderText="Centrífuga, Nevera..." Grid.Row="0" Grid.ColumnSpan="2" />
-                
-                <TextBox x:Name="AssetTagBox" Header="Etiqueta de Activo" PlaceholderText="EQ-LAB-001" Grid.Row="1" Grid.Column="0" />
-                <TextBox x:Name="ManufacturerBox" Header="Fabricante" PlaceholderText="Thermo Fisher, etc." Grid.Row="1" Grid.Column="1" />
-                
-                <TextBox x:Name="ModelBox" Header="Modelo" Grid.Row="2" Grid.Column="0" />
-                <TextBox x:Name="SerialBox" Header="Número de Serie" Grid.Row="2" Grid.Column="1" />
-                
-                <TextBox x:Name="LocationBox" Header="Ubicación" Grid.Row="3" Grid.ColumnSpan="2" />
-                
-                <DatePicker x:Name="InstallationDatePicker" Header="Fecha de Instalación" Grid.Row="4" Grid.Column="0" />
-            </Grid>
-
-            <StackPanel Orientation="Horizontal" Spacing="12" Margin="0,12,0,0">
-                <Button Content="Registrar Equipo" Style="{StaticResource AccentButtonStyle}" Click="Save_Click" />
-                <Button Content="Cancelar" Click="Back_Click" />
-            </StackPanel>
-            
-            <TextBlock x:Name="ErrorText" Foreground="#E81123" Visibility="Collapsed" />
+        <!-- Header -->
+        <StackPanel Orientation="Horizontal" Spacing="12" Padding="24,24,24,12">
+            <Button Click="Back_Click" Style="{StaticResource NavigationBackButtonNormalStyle}" />
+            <TextBlock x:Name="TitleTextBlock" Text="Nuevo Equipo" Style="{StaticResource TitleTextBlockStyle}" VerticalAlignment="Center" />
         </StackPanel>
-    </ScrollViewer>
+
+        <!-- Content -->
+        <Pivot Grid.Row="1" Padding="24,0,24,0">
+            <PivotItem Header="General">
+                <ScrollViewer>
+                    <StackPanel Spacing="16" MaxWidth="800" HorizontalAlignment="Left" Padding="0,12,0,24">
+                        <Grid ColumnDefinitions="*, *" RowDefinitions="Auto, Auto, Auto, Auto" ColumnSpacing="16" RowSpacing="16">
+                            <TextBox x:Name="NameBox" Header="Nombre del Equipo" PlaceholderText="Ej: Centrífuga Refrigerada" Grid.Row="0" Grid.Column="0" />
+                            <TextBox x:Name="InternalIdBox" Header="ID Interno (Laboratorio)" PlaceholderText="LAB-EQ-001" Grid.Row="0" Grid.Column="1" />
+                            
+                            <TextBox x:Name="AssetTagBox" Header="Etiqueta de Activo (Finanzas)" PlaceholderText="EQ-2024-001" Grid.Row="1" Grid.Column="0" />
+                            <TextBox x:Name="LocationBox" Header="Ubicación Física" PlaceholderText="Sala de Hematología" Grid.Row="1" Grid.Column="1" />
+                            
+                            <TextBox x:Name="ManufacturerBox" Header="Fabricante" PlaceholderText="Thermo Fisher" Grid.Row="2" Grid.Column="0" />
+                            <TextBox x:Name="ModelBox" Header="Modelo" PlaceholderText="Sorvall Leyend" Grid.Row="2" Grid.Column="1" />
+                            
+                            <TextBox x:Name="SerialBox" Header="Número de Serie" PlaceholderText="SN12345678" Grid.Row="3" Grid.Column="0" />
+                            <DatePicker x:Name="InstallationDatePicker" Header="Fecha de Instalación" HorizontalAlignment="Stretch" Grid.Row="3" Grid.Column="1" />
+                        </Grid>
+                        
+                        <TextBox x:Name="NotesBox" Header="Notas Generales" AcceptsReturn="True" Height="80" />
+                    </StackPanel>
+                </ScrollViewer>
+            </PivotItem>
+
+            <PivotItem Header="Técnico &amp; Software">
+                <ScrollViewer>
+                    <StackPanel Spacing="16" MaxWidth="600" HorizontalAlignment="Left" Padding="0,12,0,24">
+                         <Grid ColumnDefinitions="*, *" RowDefinitions="Auto, Auto" ColumnSpacing="16" RowSpacing="16">
+                            <TextBox x:Name="SoftwareVersionBox" Header="Versión de Software" PlaceholderText="v2.1.0" Grid.Row="0" Grid.Column="0" />
+                            <TextBox x:Name="FirmwareVersionBox" Header="Versión de Firmware" PlaceholderText="fw-1.05" Grid.Row="0" Grid.Column="1" />
+                            
+                            <TextBox x:Name="ManualPathBox" Header="Ruta al Manual (PDF/Link)" Grid.Row="1" Grid.ColumnSpan="2" />
+                        </Grid>
+                    </StackPanel>
+                </ScrollViewer>
+            </PivotItem>
+
+            <PivotItem Header="Verificación &amp; Calibración">
+                <ScrollViewer>
+                    <StackPanel Spacing="24" MaxWidth="800" HorizontalAlignment="Left" Padding="0,12,0,24">
+                        
+                        <TextBlock Text="Recepción y Estado Inicial" Style="{StaticResource SubtitleTextBlockStyle}" />
+                        <Grid ColumnDefinitions="*, *" RowDefinitions="Auto" ColumnSpacing="16">
+                            <DatePicker x:Name="ReceptionDatePicker" Header="Fecha de Recepción" HorizontalAlignment="Stretch" Grid.Column="0" />
+                            <TextBox x:Name="ReceptionConditionBox" Header="Condición de Recepción" PlaceholderText="Nuevo, Usado, Embalaje dañado..." Grid.Column="1" />
+                        </Grid>
+
+                        <MenuFlyoutSeparator />
+                        
+                        <TextBlock Text="Verificación de Desempeño (Inicial)" Style="{StaticResource SubtitleTextBlockStyle}" />
+                        <Grid ColumnDefinitions="Auto, *" RowDefinitions="Auto" ColumnSpacing="16">
+                            <ToggleSwitch x:Name="IsVerifiedToggle" Header="¿Verificado para Uso Clínico?" OffContent="No Verificado" OnContent="Verificado" Grid.Column="0" />
+                            <DatePicker x:Name="VerificationDatePicker" Header="Fecha de Verificación" HorizontalAlignment="Stretch" Grid.Column="1" />
+                        </Grid>
+
+                        <MenuFlyoutSeparator />
+
+                        <TextBlock Text="Plan de Calibración" Style="{StaticResource SubtitleTextBlockStyle}" />
+                        <Grid ColumnDefinitions="Auto, *, *" RowDefinitions="Auto" ColumnSpacing="16">
+                            <NumberBox x:Name="CalibrationFreqBox" Header="Frecuencia (Meses)" Value="12" SpinButtonPlacementMode="Inline" Grid.Column="0" Width="150" />
+                            <DatePicker x:Name="LastCalibrationDatePicker" Header="Última Calibración" HorizontalAlignment="Stretch" Grid.Column="1" />
+                            <DatePicker x:Name="NextCalibrationDatePicker" Header="Próxima Calibración" HorizontalAlignment="Stretch" Grid.Column="2" />
+                        </Grid>
+                        <TextBlock Text="* La próxima calibración se calculará automáticamente si se deja vacía basada en la frecuencia." Foreground="Gray" FontSize="12" />
+
+                    </StackPanel>
+                </ScrollViewer>
+            </PivotItem>
+        </Pivot>
+
+        <!-- Footer Actions -->
+        <StackPanel Grid.Row="2" Orientation="Horizontal" Spacing="12" Padding="24" Background="{ThemeResource SystemControlBackgroundChromeMediumLowBrush}">
+            <Button x:Name="SaveButton" Content="Guardar Cambios" Style="{StaticResource AccentButtonStyle}" Click="Save_Click" />
+            <Button Content="Cancelar" Click="Back_Click" />
+            <TextBlock x:Name="ErrorText" Foreground="Red" VerticalAlignment="Center" Margin="12,0,0,0" Visibility="Collapsed" />
+        </StackPanel>
+    </Grid>
 </Page>
