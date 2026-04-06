@@ -81,6 +81,7 @@ public class MethodDto
     public string? CurrentVersion { get; set; }
     public DateTime? EffectiveDate { get; set; }
     public Guid? DocumentId { get; set; }
+    public string? Notes { get; set; }
     
     public string? DocumentTitle { get; set; }
     public int AuthorizedUsersCount { get; set; }

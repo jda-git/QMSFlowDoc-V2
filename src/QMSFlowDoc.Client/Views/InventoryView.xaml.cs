@@ -48,12 +48,7 @@ public sealed partial class InventoryView : Page
 
         async Task<bool> Check(string key)
         {
-            if (app.AuthService.IsAdmin) return true;
-            foreach (var r in roles)
-            {
-                if (await perms.HasPermissionAsync(r, key)) return true;
-            }
-            return false;
+            return await perms.HasPermissionAsync(key);
         }
 
         AddReagentButton.IsEnabled = await Check("Inventory.CreateReagent");

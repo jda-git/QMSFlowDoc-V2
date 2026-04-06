@@ -1,140 +1,233 @@
-using System;
-using System.Collections.Generic;
-using System.Threading.Tasks;
 using QMSFlowDoc.Shared.DTOs;
 using QMSFlowDoc.Shared.Models;
+using Microsoft.EntityFrameworkCore;
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Threading.Tasks;
 
 namespace QMSFlowDoc.Client.Services;
 
 public interface IEQAService
 {
-    Task<List<EQAProgramDto>> GetProgramsAsync();
-    Task<EQAProgram> CreateProgramAsync(CreateEQAProgramRequest request);
-    Task UpdateProgramAsync(UpdateEQAProgramRequest request);
-    Task<List<EQAResultDto>> GetResultsAsync(Guid programId);
-    Task RegisterResultAsync(RegisterEQAResultRequest request);
-    Task UpdateResultAsync(UpdateEQAResultRequest request);
+    Task<List<EQAProgram>> GetProgramsAsync();
+    Task<EQAProgram?> GetProgramByIdAsync(Guid id);
+    Task<EQAProgram?> CreateProgramAsync(EQAProgram program);
+    Task<bool> UpdateProgramAsync(EQAProgram program);
+    Task<EQAResult?> AddResultAsync(EQAResult result);
+    Task<bool> UpdateResultAsync(EQAResult result);
 
-    // Phase 3 Methods
-    Task<List<EQASchemeDto>> GetSchemesAsync(Guid? providerId = null);
-    Task<EQASchemeDto?> GetSchemeAsync(Guid id);
+    // UI compatibility methods for EQARoundDetailsView
+    Task<List<EQASchemeDto>> GetSchemesAsync();
     Task<List<EQARoundDto>> GetRoundsAsync(Guid schemeId);
-    Task<EQARoundDto?> GetRoundAsync(Guid id);
+    Task<EQARoundDto?> GetRoundAsync(Guid roundId);
     Task UpsertRoundAsync(EQARoundDto round);
+    Task ApproveRoundAsync(Guid roundId, Guid userId, string userName);
     Task<List<EQARoundResultDto>> GetRoundResultsAsync(Guid roundId);
     Task UpsertRoundResultAsync(EQARoundResultDto result);
-    Task ApproveRoundAsync(Guid roundId, Guid userId, string userName);
 }
 
+/// <summary>V2: EQA service using SQL Server via EF Core.</summary>
 public class EQAService : IEQAService
 {
-    private readonly LocalDocumentStore _localStore;
+    private readonly ClientDbContextFactory _dbFactory;
 
-    public EQAService(LocalDocumentStore localStore)
+    public EQAService(ClientDbContextFactory dbFactory) => _dbFactory = dbFactory;
+
+    public async Task<List<EQAProgram>> GetProgramsAsync()
     {
-        _localStore = localStore;
+        using var ctx = _dbFactory.CreateContext();
+        return await ctx.EQAPrograms
+            .Include(p => p.Results.OrderByDescending(r => r.ReceiptDate))
+            .OrderBy(p => p.Name)
+            .ToListAsync();
     }
 
-    public async Task<List<EQAProgramDto>> GetProgramsAsync()
+    public async Task<EQAProgram?> GetProgramByIdAsync(Guid id)
     {
-        return await _localStore.GetEQAProgramsAsync();
+        using var ctx = _dbFactory.CreateContext();
+        return await ctx.EQAPrograms
+            .Include(p => p.Results)
+            .FirstOrDefaultAsync(p => p.Id == id);
     }
 
-    public async Task<EQAProgram> CreateProgramAsync(CreateEQAProgramRequest request)
+    public async Task<EQAProgram?> CreateProgramAsync(EQAProgram program)
     {
-        return await _localStore.CreateEQAProgramAsync(request);
+        using var ctx = _dbFactory.CreateContext();
+        program.Id = Guid.NewGuid();
+        ctx.EQAPrograms.Add(program);
+        await ctx.SaveChangesAsync();
+        return program;
     }
 
-    public async Task UpdateProgramAsync(UpdateEQAProgramRequest request)
+    public async Task<bool> UpdateProgramAsync(EQAProgram program)
     {
-        await _localStore.UpdateEQAProgramAsync(request);
+        using var ctx = _dbFactory.CreateContext();
+        var existing = await ctx.EQAPrograms.FindAsync(program.Id);
+        if (existing == null) return false;
+
+        ctx.Entry(existing).CurrentValues.SetValues(program);
+        await ctx.SaveChangesAsync();
+        return true;
     }
 
-    public async Task<List<EQAResultDto>> GetResultsAsync(Guid programId)
+    public async Task<EQAResult?> AddResultAsync(EQAResult result)
     {
-        return await _localStore.GetEQAResultsAsync(programId);
+        using var ctx = _dbFactory.CreateContext();
+        result.Id = Guid.NewGuid();
+        ctx.EQAResults.Add(result);
+        await ctx.SaveChangesAsync();
+        return result;
     }
 
-    public async Task RegisterResultAsync(RegisterEQAResultRequest request)
+    public async Task<bool> UpdateResultAsync(EQAResult result)
     {
-        await _localStore.RegisterEQAResultAsync(request);
+        using var ctx = _dbFactory.CreateContext();
+        var existing = await ctx.EQAResults.FindAsync(result.Id);
+        if (existing == null) return false;
+
+        ctx.Entry(existing).CurrentValues.SetValues(result);
+        await ctx.SaveChangesAsync();
+        return true;
     }
 
-    public async Task UpdateResultAsync(UpdateEQAResultRequest request)
+    // --- UI Compatibility Methods ---
+    
+    public async Task<List<EQASchemeDto>> GetSchemesAsync()
     {
-        await _localStore.UpdateEQAResultAsync(request);
-    }
-
-    // Phase 3 Implementation
-    public async Task<List<EQASchemeDto>> GetSchemesAsync(Guid? providerId = null)
-    {
-        return await _localStore.GetEQASchemesAsync(providerId);
-    }
-
-    public async Task<EQASchemeDto?> GetSchemeAsync(Guid id)
-    {
-        return await _localStore.GetEQASchemeByIdAsync(id);
+        using var ctx = _dbFactory.CreateContext();
+        var programs = await ctx.EQAPrograms.Include(p => p.Results).OrderBy(p => p.Name).ToListAsync();
+        return programs.Select(p => new EQASchemeDto(
+            p.Id,
+            p.Name,
+            p.Provider ?? "Unknown",
+            string.Empty, // ProviderReference
+            p.CycleFrequency, // Periodicity
+            p.Status.ToString(),
+            string.Empty, // Notes
+            0, // TotalRounds expected
+            p.Results.Count,
+            p.Results.Count(r => r.Performance == EQAPerformance.UNSATISFACTORY),
+            string.Empty, // Matrix
+            null // ResponsibleUserId
+        )).ToList();
     }
 
     public async Task<List<EQARoundDto>> GetRoundsAsync(Guid schemeId)
     {
-        return await _localStore.GetEQARoundsAsync(schemeId);
+        using var ctx = _dbFactory.CreateContext();
+        var program = await ctx.EQAPrograms.FindAsync(schemeId);
+        if (program == null) return new List<EQARoundDto>();
+
+        var results = await ctx.EQAResults.Where(r => r.ProgramId == schemeId).OrderByDescending(r => r.ReceiptDate).ToListAsync();
+        return results.Select(r => new EQARoundDto(
+            r.Id,
+            r.ProgramId,
+            program.Name,
+            r.CycleIdentifier,
+            r.ReceiptDate?.Year ?? DateTime.Now.Year,
+            r.ReceiptDate,
+            r.ProcessingDate,
+            r.SubmissionDate,
+            r.SubmissionDate,
+            r.ReviewDate,
+            r.ReviewDate,
+            r.Status.ToString(),
+            "", // FolderPath
+            r.Notes,
+            r.ReviewerUserId,
+            "Revisor",
+            r.ReviewDate
+        )).ToList();
     }
 
-    public async Task<EQARoundDto?> GetRoundAsync(Guid id)
+    public async Task<EQARoundDto?> GetRoundAsync(Guid roundId)
     {
-        return await _localStore.GetEQARoundByIdAsync(id);
+        using var ctx = _dbFactory.CreateContext();
+        var result = await ctx.EQAResults.FindAsync(roundId);
+        if (result == null) return null;
+
+        var program = await ctx.EQAPrograms.FindAsync(result.ProgramId);
+
+        return new EQARoundDto(
+            result.Id,
+            result.ProgramId,
+            program?.Name ?? "Unknown",
+            result.CycleIdentifier,
+            result.ReceiptDate?.Year ?? DateTime.Now.Year,
+            result.ReceiptDate,
+            result.ProcessingDate,
+            result.SubmissionDate,
+            result.SubmissionDate,
+            result.ReviewDate,
+            result.ReviewDate,
+            result.Status.ToString(),
+            "", // FolderPath
+            result.Notes,
+            result.ReviewerUserId,
+            "Revisor",
+            result.ReviewDate
+        );
     }
 
     public async Task UpsertRoundAsync(EQARoundDto round)
     {
-        // Handle folder creation if path is null
-        if (string.IsNullOrEmpty(round.FolderPath))
+        using var ctx = _dbFactory.CreateContext();
+        var result = await ctx.EQAResults.FindAsync(round.Id);
+        if (result != null)
         {
-            var scheme = await _localStore.GetEQASchemeByIdAsync(round.SchemeId);
-            if (scheme != null)
-            {
-                try
-                {
-                    var baseDir = await _localStore.GetBaseDocumentPathAsync();
-                    if (!string.IsNullOrEmpty(baseDir))
-                    {
-                        // Structure: QMS\EQA\Provider\Scheme\RoundCode
-                        var roundDir = System.IO.Path.Combine(baseDir, "EQA", 
-                            scheme.ProviderName.Replace(" ", "_"), 
-                            scheme.Name.Replace(" ", "_"), 
-                            round.RoundCode.Replace(" ", "_"));
-
-                        if (!System.IO.Directory.Exists(roundDir))
-                        {
-                            System.IO.Directory.CreateDirectory(roundDir);
-                        }
-
-                        round = round with { FolderPath = roundDir };
-                    }
-                }
-                catch
-                {
-                    // Ignore folder creation errors for now
-                }
-            }
+            result.CycleIdentifier = round.RoundCode;
+            result.ReceiptDate = round.DateReceived;
+            result.ProcessingDate = round.DateAnalysis;
+            result.SubmissionDate = round.DateSubmitted;
+            result.Notes = round.Notes;
+            await ctx.SaveChangesAsync();
         }
-
-        await _localStore.UpsertEQARoundAsync(round);
-    }
-
-    public async Task<List<EQARoundResultDto>> GetRoundResultsAsync(Guid roundId)
-    {
-        return await _localStore.GetEQARoundResultsAsync(roundId);
-    }
-
-    public async Task UpsertRoundResultAsync(EQARoundResultDto result)
-    {
-        await _localStore.UpsertEQARoundResultAsync(result);
     }
 
     public async Task ApproveRoundAsync(Guid roundId, Guid userId, string userName)
     {
-        await _localStore.ApproveRoundAsync(roundId, userId, userName);
+        using var ctx = _dbFactory.CreateContext();
+        var result = await ctx.EQAResults.FindAsync(roundId);
+        if (result != null)
+        {
+            result.Status = EQAResultStatus.EVALUATED;
+            result.ReviewerUserId = userId;
+            result.ReviewDate = DateTime.Now;
+            await ctx.SaveChangesAsync();
+        }
+    }
+
+    public async Task<List<EQARoundResultDto>> GetRoundResultsAsync(Guid roundId)
+    {
+        using var ctx = _dbFactory.CreateContext();
+        var result = await ctx.EQAResults.FindAsync(roundId);
+        if (result == null || string.IsNullOrWhiteSpace(result.Notes) || !result.Notes.StartsWith("["))
+            return new List<EQARoundResultDto>();
+
+        try
+        {
+            return System.Text.Json.JsonSerializer.Deserialize<List<EQARoundResultDto>>(result.Notes) ?? new List<EQARoundResultDto>();
+        }
+        catch
+        {
+            return new List<EQARoundResultDto>();
+        }
+    }
+
+    public async Task UpsertRoundResultAsync(EQARoundResultDto resultDto)
+    {
+        using var ctx = _dbFactory.CreateContext();
+        var result = await ctx.EQAResults.FindAsync(resultDto.RoundId);
+        if (result != null)
+        {
+            var lst = await GetRoundResultsAsync(resultDto.RoundId);
+            var existing = lst.FirstOrDefault(x => x.Id == resultDto.Id);
+            if (existing != null) lst.Remove(existing);
+            lst.Add(resultDto);
+            
+            result.Notes = System.Text.Json.JsonSerializer.Serialize(lst);
+            await ctx.SaveChangesAsync();
+        }
     }
 }

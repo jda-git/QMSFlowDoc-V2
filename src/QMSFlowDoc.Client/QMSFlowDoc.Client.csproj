@@ -23,6 +23,10 @@
     <PackageReference Include="Microsoft.WindowsAppSDK" Version="1.4.231008000" />
     <PackageReference Include="Microsoft.Windows.SDK.BuildTools" Version="10.0.26100.1" />
     <PackageReference Include="Microsoft.Data.Sqlite" Version="8.0.0" />
+    <!-- V2: SQL Server Central -->
+    <PackageReference Include="Microsoft.Data.SqlClient" Version="5.2.2" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.SqlServer" Version="8.0.11" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="8.0.2" />
     <PackageReference Include="QuestPDF" Version="2025.12.3" />
     <PackageReference Include="PDFsharp" Version="6.1.1" />
     <Manifest Include="app.manifest" />
@@ -30,5 +34,8 @@
 
   <ItemGroup>
     <ProjectReference Include="..\QMSFlowDoc.Shared\QMSFlowDoc.Shared.csproj" />
+    <!-- V2: Central data layer and document storage -->
+    <ProjectReference Include="..\QMSFlowDoc.Data\QMSFlowDoc.Data.csproj" />
+    <ProjectReference Include="..\QMSFlowDoc.DocumentStorage\QMSFlowDoc.DocumentStorage.csproj" />
   </ItemGroup>
 </Project>

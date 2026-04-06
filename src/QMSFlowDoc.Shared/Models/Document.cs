@@ -36,6 +36,10 @@ public class Document
     public DateTime? NextReviewDue { get; set; }
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
+    public bool IsDeleted { get; set; } = false;
+
+    // V2: Optimistic concurrency
+    public byte[] RowVersion { get; set; } = Array.Empty<byte>();
 
     public List<DocumentVersion> Versions { get; set; } = new();
 }
@@ -58,6 +62,9 @@ public class DocumentVersion
     public string? FileName { get; set; }
     public string? LocalFilePath { get; set; }
     public bool IsCurrent { get; set; } = false;
+
+    // V2: Optimistic concurrency
+    public byte[] RowVersion { get; set; } = Array.Empty<byte>();
     
     // ISO 15189 Req 1.1 Approval Workflow
     public Guid? ApprovedByUserId { get; set; }

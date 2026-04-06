@@ -18,6 +18,9 @@ public class User
     public DateTime? LockedUntil { get; set; }
     public DateTime? PasswordChangedAt { get; set; }
 
+    // V2: Optimistic concurrency
+    public byte[] RowVersion { get; set; } = Array.Empty<byte>();
+
     public List<Role> Roles { get; set; } = new();
 }
 

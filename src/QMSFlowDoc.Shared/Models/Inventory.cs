@@ -67,6 +67,12 @@ public class Supplier
     public DateTime? NextEvaluationDate { get; set; }
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
+    public bool IsDeleted { get; set; } = false;
+
+    // V2: Optimistic concurrency
+    public byte[] RowVersion { get; set; } = Array.Empty<byte>();
+
+    public List<SupplierEvaluation> Evaluations { get; set; } = new();
 }
 
 public class StorageLocation
@@ -102,6 +108,10 @@ public class Reagent
     public decimal ReorderQty { get; set; }
     public DateTime CreatedAt { get; set; }
     public DateTime UpdatedAt { get; set; }
+    public bool IsDeleted { get; set; } = false;
+
+    // V2: Optimistic concurrency
+    public byte[] RowVersion { get; set; } = Array.Empty<byte>();
 
     public List<ReagentLot> Lots { get; set; } = new();
 }
@@ -127,6 +137,9 @@ public class ReagentLot
     public Guid? ReleaseByUserId { get; set; }
     public DateTime? ReleaseAt { get; set; }
     public DateTime CreatedAt { get; set; }
+
+    // V2: Optimistic concurrency
+    public byte[] RowVersion { get; set; } = Array.Empty<byte>();
 }
 
 public class InventoryMovement

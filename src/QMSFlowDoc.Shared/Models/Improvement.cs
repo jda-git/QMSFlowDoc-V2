@@ -61,6 +61,9 @@ public class Risk
     public RiskStatus Status { get; set; } = RiskStatus.ACTIVE;
     public DateTime CreatedAt { get; set; }
     public DateTime UpdatedAt { get; set; }
+
+    // V2: Optimistic concurrency
+    public byte[] RowVersion { get; set; } = Array.Empty<byte>();
 }
 
 public class AuditPlan
@@ -80,6 +83,9 @@ public class AuditPlan
     public string? ChecklistJson { get; set; }
 
     public List<AuditFinding> Findings { get; set; } = new();
+
+    // V2: Optimistic concurrency
+    public byte[] RowVersion { get; set; } = Array.Empty<byte>();
 }
 
 public class AuditFinding

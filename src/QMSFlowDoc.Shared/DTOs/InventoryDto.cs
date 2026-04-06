@@ -16,6 +16,8 @@ public class ReagentListDto
     public decimal TargetStock { get; set; }
     public string? Fluorescence { get; set; }
     public string? InternalCode { get; set; }
+    public string? Classification { get; set; }
+    public string? SupplierName { get; set; }
     public List<LotSummaryDto> AvailableLots { get; set; } = new();
 
     public string LotFechaSummary => string.Join(" ", AvailableLots.Select(l => l.FormattedString));

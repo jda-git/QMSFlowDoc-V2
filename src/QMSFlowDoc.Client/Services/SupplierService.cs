@@ -1,9 +1,10 @@
-using System;
-using System.Collections.Generic;
-using System.Threading.Tasks;
 using QMSFlowDoc.Shared.DTOs;
 using QMSFlowDoc.Shared.Models;
-using Microsoft.Data.Sqlite;
+using Microsoft.EntityFrameworkCore;
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Threading.Tasks;
 
 namespace QMSFlowDoc.Client.Services;
 
@@ -11,36 +12,72 @@ public interface ISupplierService
 {
     Task<List<SupplierListDto>> GetSuppliersAsync();
     Task<SupplierDetailDto?> GetSupplierByIdAsync(Guid id);
-    Task<Guid> CreateSupplierAsync(CreateSupplierRequest request);
-    Task<bool> UpdateSupplierAsync(SupplierDetailDto supplier);
+    Task<SupplierDetailDto?> CreateSupplierAsync(CreateSupplierRequest request);
+    Task<bool> UpdateSupplierAsync(SupplierDetailDto dto);
     Task<bool> DeleteSupplierAsync(Guid id);
-    Task<Guid> CreateEvaluationAsync(CreateSupplierEvaluationRequest request, Guid? evaluatorUserId);
-    Task<List<SupplierEvaluationDto>> GetEvaluationsAsync(Guid supplierId);
-    Task<int> GetSupplierIncidentCountAsync(Guid supplierId);
-    Task UpdateExpiredEvaluationsAsync();
+    Task<List<SupplierEvaluation>> GetEvaluationsAsync(Guid supplierId);
+    Task<SupplierEvaluation?> CreateEvaluationAsync(CreateSupplierEvaluationRequest request, Guid? evaluatorUserId);
 }
 
+/// <summary>V2: Supplier service using SQL Server via EF Core.</summary>
 public class SupplierService : ISupplierService
 {
-    private readonly LocalDocumentStore _store;
+    private readonly ClientDbContextFactory _dbFactory;
 
-    public SupplierService(LocalDocumentStore store)
-    {
-        _store = store;
-    }
+    public SupplierService(ClientDbContextFactory dbFactory) => _dbFactory = dbFactory;
 
     public async Task<List<SupplierListDto>> GetSuppliersAsync()
     {
-        return await _store.GetSuppliersAsync();
+        using var ctx = _dbFactory.CreateContext();
+        return await ctx.Suppliers
+            .Include(s => s.Evaluations)
+            .OrderBy(s => s.Name)
+            .Select(s => new SupplierListDto(s.Id, s.Name, s.Type, s.QualityStatus,
+                s.Evaluations.OrderByDescending(e => e.EvaluationDate).Select(e => (DateTime?)e.EvaluationDate).FirstOrDefault(),
+                null,
+                s.Evaluations.Count, 0))
+            .ToListAsync();
     }
 
     public async Task<SupplierDetailDto?> GetSupplierByIdAsync(Guid id)
     {
-        return await _store.GetSupplierByIdAsync(id);
+        using var ctx = _dbFactory.CreateContext();
+        var s = await ctx.Suppliers.Include(x => x.Evaluations).FirstOrDefaultAsync(x => x.Id == id);
+        if (s == null) return null;
+
+        return new SupplierDetailDto
+        {
+            Id = s.Id,
+            Name = s.Name,
+            ContactName = s.ContactName,
+            Email = s.Email,
+            Phone = s.Phone,
+            Address = s.Address,
+            Notes = s.Notes,
+            Type = s.Type,
+            QualityStatus = s.QualityStatus,
+            LastEvaluationDate = s.Evaluations.OrderByDescending(e => e.EvaluationDate).Select(e => (DateTime?)e.EvaluationDate).FirstOrDefault(),
+            CreatedAt = s.CreatedAt,
+            Evaluations = s.Evaluations.Select(e => new SupplierEvaluationDto
+            {
+                 Id = e.Id,
+                 SupplierId = e.SupplierId,
+                 EvaluationDate = e.EvaluationDate,
+                 EvaluatedPeriod = e.EvaluatedPeriod,
+                 ScorePlazos = e.ScorePlazos,
+                 ScoreCalidad = e.ScoreCalidad,
+                 ScoreServicio = e.ScoreServicio,
+                 ScoreIncidencias = e.ScoreIncidencias,
+                 IsApproved = e.IsApproved,
+                 Observations = e.Observations,
+                 AttachmentPath = e.AttachmentPath
+            }).ToList()
+        };
     }
 
-    public async Task<Guid> CreateSupplierAsync(CreateSupplierRequest request)
+    public async Task<SupplierDetailDto?> CreateSupplierAsync(CreateSupplierRequest request)
     {
+        using var ctx = _dbFactory.CreateContext();
         var supplier = new Supplier
         {
             Id = Guid.NewGuid(),
@@ -55,29 +92,57 @@ public class SupplierService : ISupplierService
             CreatedAt = DateTime.UtcNow,
             UpdatedAt = DateTime.UtcNow
         };
-
-        await _store.CreateSupplierAsync(supplier);
-        return supplier.Id;
+        ctx.Suppliers.Add(supplier);
+        await ctx.SaveChangesAsync();
+        return await GetSupplierByIdAsync(supplier.Id);
     }
 
-    public async Task<bool> UpdateSupplierAsync(SupplierDetailDto supplier)
+    public async Task<bool> UpdateSupplierAsync(SupplierDetailDto dto)
     {
-        return await _store.UpdateSupplierAsync(supplier);
+        using var ctx = _dbFactory.CreateContext();
+        var existing = await ctx.Suppliers.FindAsync(dto.Id);
+        if (existing == null) return false;
+
+        existing.Name = dto.Name;
+        existing.ContactName = dto.ContactName;
+        existing.Email = dto.Email;
+        existing.Phone = dto.Phone;
+        existing.Address = dto.Address;
+        existing.Notes = dto.Notes;
+        existing.Type = dto.Type;
+        existing.UpdatedAt = DateTime.UtcNow;
+
+        await ctx.SaveChangesAsync();
+        return true;
     }
 
     public async Task<bool> DeleteSupplierAsync(Guid id)
     {
-        return await _store.DeleteSupplierAsync(id);
+        using var ctx = _dbFactory.CreateContext();
+        var s = await ctx.Suppliers.FindAsync(id);
+        if (s == null) return false;
+        s.IsDeleted = true;
+        await ctx.SaveChangesAsync();
+        return true;
     }
 
-    public async Task<Guid> CreateEvaluationAsync(CreateSupplierEvaluationRequest request, Guid? evaluatorUserId)
+    public async Task<List<SupplierEvaluation>> GetEvaluationsAsync(Guid supplierId)
     {
+        using var ctx = _dbFactory.CreateContext();
+        return await ctx.SupplierEvaluations
+            .Where(e => e.SupplierId == supplierId)
+            .OrderByDescending(e => e.EvaluationDate)
+            .ToListAsync();
+    }
+
+    public async Task<SupplierEvaluation?> CreateEvaluationAsync(CreateSupplierEvaluationRequest request, Guid? evaluatorUserId)
+    {
+        using var ctx = _dbFactory.CreateContext();
         var evaluation = new SupplierEvaluation
         {
             Id = Guid.NewGuid(),
             SupplierId = request.SupplierId,
             EvaluationDate = request.EvaluationDate,
-            EvaluatorUserId = evaluatorUserId,
             EvaluatedPeriod = request.EvaluatedPeriod,
             ScorePlazos = request.ScorePlazos,
             ScoreCalidad = request.ScoreCalidad,
@@ -86,51 +151,11 @@ public class SupplierService : ISupplierService
             IsApproved = request.IsApproved,
             Observations = request.Observations,
             AttachmentPath = request.AttachmentPath,
+            EvaluatorUserId = evaluatorUserId,
             CreatedAt = DateTime.UtcNow
         };
-
-        // Business Logic: Calculate status based on scores
-        var average = evaluation.AverageScore;
-        SupplierQualityStatus newStatus;
-        
-        if (!request.IsApproved || average < 3.0)
-        {
-            newStatus = SupplierQualityStatus.NO_APTO;
-        }
-        else if (average < 4.0)
-        {
-            newStatus = SupplierQualityStatus.EN_OBSERVACION;
-        }
-        else
-        {
-            newStatus = SupplierQualityStatus.APTO;
-        }
-
-        // Calculate next evaluation date (1 year from now for approved)
-        DateTime? nextEvalDate = null;
-        if (request.IsApproved)
-        {
-            nextEvalDate = request.EvaluationDate.AddYears(1);
-        }
-
-        await _store.CreateSupplierEvaluationAsync(evaluation, newStatus, nextEvalDate);
-        return evaluation.Id;
-    }
-
-    public async Task<List<SupplierEvaluationDto>> GetEvaluationsAsync(Guid supplierId)
-    {
-        return await _store.GetSupplierEvaluationsAsync(supplierId);
-    }
-
-    public async Task<int> GetSupplierIncidentCountAsync(Guid supplierId)
-    {
-        // Count incidents with Origin containing supplier name or where supplier is referenced
-        return await _store.GetSupplierIncidentCountAsync(supplierId);
-    }
-
-    public async Task UpdateExpiredEvaluationsAsync()
-    {
-        // Mark suppliers as EVALUACION_CADUCADA if NextEvaluationDate < today
-        await _store.UpdateExpiredSupplierEvaluationsAsync();
+        ctx.SupplierEvaluations.Add(evaluation);
+        await ctx.SaveChangesAsync();
+        return evaluation;
     }
 }

@@ -1,9 +1,9 @@
 using QMSFlowDoc.Shared.DTOs;
 using QMSFlowDoc.Shared.Models;
+using Microsoft.EntityFrameworkCore;
 using System;
 using System.Collections.Generic;
-using System.Net.Http;
-using System.Net.Http.Json;
+using System.Linq;
 using System.Threading.Tasks;
 
 namespace QMSFlowDoc.Client.Services;
@@ -22,197 +22,178 @@ public interface IEquipmentService
     Task<IEnumerable<EquipmentDailyQCDto>> GetDailyQCAsync(Guid equipmentId);
 }
 
+/// <summary>
+/// V2: Equipment service using SQL Server via EF Core.
+/// All operations use short-lived DbContext for multi-user safety.
+/// </summary>
 public class EquipmentService : IEquipmentService
 {
-    private readonly HttpClient _httpClient;
-    private LocalDocumentStore? _localStore;
-    private readonly NetworkConfigStore _networkConfig;
+    private readonly ClientDbContextFactory _dbFactory;
 
-    public EquipmentService(HttpClient httpClient, LocalDocumentStore? localStore = null, NetworkConfigStore? networkConfig = null)
+    public EquipmentService(ClientDbContextFactory dbFactory)
     {
-        _httpClient = httpClient;
-        _localStore = localStore;
-        _networkConfig = networkConfig ?? new NetworkConfigStore();
-    }
-
-    private async Task<LocalDocumentStore> GetLocalStoreAsync()
-    {
-        if (_localStore == null)
-        {
-            _localStore = new LocalDocumentStore(_networkConfig);
-            await _localStore.InitializeAsync();
-        }
-        return _localStore;
+        _dbFactory = dbFactory;
     }
 
     public async Task<IEnumerable<EquipmentListDto>> GetEquipmentAsync()
     {
-        try
-        {
-            return await _httpClient.GetFromJsonAsync<IEnumerable<EquipmentListDto>>("equipment")
-                   ?? new List<EquipmentListDto>();
-        }
-        catch
-        {
-            var store = await GetLocalStoreAsync();
-            return await store.GetEquipmentAsync();
-        }
+        using var ctx = _dbFactory.CreateContext();
+        return await ctx.Equipments
+            .OrderBy(e => e.Name)
+            .Select(e => new EquipmentListDto
+            {
+                Id = e.Id,
+                Name = e.Name,
+                Model = e.Model,
+                Location = e.Location,
+                Status = e.Status,
+                InternalId = e.InternalId,
+                AssetTag = e.AssetTag,
+                NextCalibration = e.NextCalibration,
+                IsVerified = e.IsVerified
+            })
+            .ToListAsync();
     }
 
     public async Task<Equipment?> GetEquipmentByIdAsync(Guid id)
     {
-        try { return await _httpClient.GetFromJsonAsync<Equipment>($"equipment/{id}"); }
-        catch
-        {
-            var store = await GetLocalStoreAsync();
-            return await store.GetEquipmentByIdAsync(id);
-        }
+        using var ctx = _dbFactory.CreateContext();
+        return await ctx.Equipments
+            .Include(e => e.MaintenancePlans)
+            .Include(e => e.MaintenanceEvents.OrderByDescending(ev => ev.PerformedAt))
+            .Include(e => e.DailyQCs.OrderByDescending(qc => qc.PerformedAt).Take(30))
+            .FirstOrDefaultAsync(e => e.Id == id);
     }
 
     public async Task<Equipment?> CreateEquipmentAsync(CreateEquipmentRequest request)
     {
-        try
+        using var ctx = _dbFactory.CreateContext();
+        var equipment = new Equipment
         {
-            var response = await _httpClient.PostAsJsonAsync("equipment", request);
-            return response.IsSuccessStatusCode ? await response.Content.ReadFromJsonAsync<Equipment>() : null;
-        }
-        catch
-        {
-            var store = await GetLocalStoreAsync();
-            // Map DTO to Model for local storage.
-            var equipment = new Equipment
-            {
-                Id = Guid.NewGuid(),
-                AssetTag = request.AssetTag,
-                Name = request.Name,
-                Manufacturer = request.Manufacturer,
-                Model = request.Model,
-                SerialNumber = request.SerialNumber,
-                SoftwareVersion = request.SoftwareVersion,
-                FirmwareVersion = request.FirmwareVersion,
-                Location = request.Location,
-                InstalledAt = request.InstalledAt,
-                Status = EquipmentStatus.ACTIVE
-            };
-            await store.CreateEquipmentAsync(equipment);
-            return equipment;
-        }
+            Id = Guid.NewGuid(),
+            Name = request.Name,
+            Manufacturer = request.Manufacturer,
+            Model = request.Model,
+            SerialNumber = request.SerialNumber,
+            SoftwareVersion = request.SoftwareVersion,
+            FirmwareVersion = request.FirmwareVersion,
+            Location = request.Location,
+            InternalId = request.InternalId,
+            AssetTag = request.AssetTag,
+            InstalledAt = request.InstalledAt,
+            Status = EquipmentStatus.ACTIVE
+        };
+        ctx.Equipments.Add(equipment);
+        await ctx.SaveChangesAsync();
+        return equipment;
     }
 
     public async Task<Equipment?> UpdateEquipmentAsync(UpdateEquipmentRequest request)
     {
-        try
-        {
-            var response = await _httpClient.PutAsJsonAsync($"equipment/{request.Id}", request);
-            return response.IsSuccessStatusCode ? await response.Content.ReadFromJsonAsync<Equipment>() : null;
-        }
-        catch
-        {
-            var store = await GetLocalStoreAsync();
-            await store.UpdateEquipmentAsync(request);
-            return await store.GetEquipmentByIdAsync(request.Id);
-        }
+        using var ctx = _dbFactory.CreateContext();
+        var eq = await ctx.Equipments.FindAsync(request.Id);
+        if (eq == null) return null;
+
+        eq.Name = request.Name;
+        eq.Manufacturer = request.Manufacturer ?? eq.Manufacturer;
+        eq.Model = request.Model ?? eq.Model;
+        eq.SerialNumber = request.SerialNumber ?? eq.SerialNumber;
+        eq.SoftwareVersion = request.SoftwareVersion ?? eq.SoftwareVersion;
+        eq.FirmwareVersion = request.FirmwareVersion ?? eq.FirmwareVersion;
+        eq.Location = request.Location ?? eq.Location;
+        eq.InternalId = request.InternalId ?? eq.InternalId;
+        eq.AssetTag = request.AssetTag ?? eq.AssetTag;
+        eq.IsVerified = request.IsVerified;
+        eq.NextCalibration = request.NextCalibration ?? eq.NextCalibration;
+
+        await ctx.SaveChangesAsync();
+        return eq;
     }
 
     public async Task<MaintenanceEvent?> GetLastMaintenanceAsync(Guid equipmentId)
     {
-        try
-        {
-            return await _httpClient.GetFromJsonAsync<MaintenanceEvent>($"equipment/{equipmentId}/maintenance/last");
-        }
-        catch
-        {
-            var store = await GetLocalStoreAsync();
-            return await store.GetLastMaintenanceAsync(equipmentId);
-        }
+        using var ctx = _dbFactory.CreateContext();
+        return await ctx.MaintenanceEvents
+            .Where(e => e.EquipmentId == equipmentId)
+            .OrderByDescending(e => e.PerformedAt)
+            .FirstOrDefaultAsync();
     }
 
     public async Task<MaintenanceEvent?> RegisterMaintenanceAsync(RegisterMaintenanceRequest request)
     {
-        try
+        using var ctx = _dbFactory.CreateContext();
+        var evt = new MaintenanceEvent
         {
-            var response = await _httpClient.PostAsJsonAsync("equipment/maintenance", request);
-            return response.IsSuccessStatusCode ? await response.Content.ReadFromJsonAsync<MaintenanceEvent>() : null;
-        }
-        catch
-        {
-            var store = await GetLocalStoreAsync();
-            await store.RegisterMaintenanceAsync(request);
-            // Construct a basic event for UI feedback
-            return new MaintenanceEvent
-            {
-                Id = Guid.NewGuid(),
-                EquipmentId = request.EquipmentId,
-                PerformedAt = request.PerformedAt ?? DateTime.UtcNow,
-                Notes = request.Notes
-            };
-        }
+            Id = Guid.NewGuid(),
+            EquipmentId = request.EquipmentId,
+            EventType = request.EventType,
+            PerformedAt = request.PerformedAt ?? DateTime.UtcNow,
+            PerformedByUserId = request.UserId,
+            Notes = request.Notes,
+            Cost = request.Cost,
+            CertificatePath = request.CertificatePath,
+            Outcome = request.Outcome
+        };
+        ctx.MaintenanceEvents.Add(evt);
+        await ctx.SaveChangesAsync();
+        return evt;
     }
 
     public async Task<MaintenanceEvent?> UpdateMaintenanceAsync(UpdateMaintenanceRequest request)
     {
-        try
-        {
-            var response = await _httpClient.PutAsJsonAsync($"equipment/maintenance/{request.Id}", request);
-            return response.IsSuccessStatusCode ? await response.Content.ReadFromJsonAsync<MaintenanceEvent>() : null;
-        }
-        catch
-        {
-            var store = await GetLocalStoreAsync();
-            await store.UpdateMaintenanceAsync(request);
-            // Return updated object for UI
-            return new MaintenanceEvent
-            {
-                Id = request.Id,
-                EquipmentId = request.EquipmentId,
-                PerformedAt = request.PerformedAt ?? DateTime.UtcNow,
-                Notes = request.Notes,
-                EventType = request.EventType,
-                Outcome = request.Outcome
-            };
-        }
+        using var ctx = _dbFactory.CreateContext();
+        var evt = await ctx.MaintenanceEvents.FindAsync(request.Id);
+        if (evt == null) return null;
+
+        evt.EventType = request.EventType;
+        evt.PerformedAt = request.PerformedAt ?? evt.PerformedAt;
+        evt.Notes = request.Notes ?? evt.Notes;
+        evt.Outcome = request.Outcome ?? evt.Outcome;
+        evt.Cost = request.Cost ?? evt.Cost;
+        evt.CertificatePath = request.CertificatePath ?? evt.CertificatePath;
+
+        await ctx.SaveChangesAsync();
+        return evt;
     }
 
     public async Task<bool> DeleteEquipmentAsync(Guid id)
     {
-        try
-        {
-            var response = await _httpClient.DeleteAsync($"equipment/{id}");
-            return response.IsSuccessStatusCode;
-        }
-        catch
-        {
-            var store = await GetLocalStoreAsync();
-            return await store.DeleteEquipmentAsync(id);
-        }
+        using var ctx = _dbFactory.CreateContext();
+        var eq = await ctx.Equipments.FindAsync(id);
+        if (eq == null) return false;
+
+        // Soft delete via IsDeleted flag
+        eq.IsDeleted = true;
+        await ctx.SaveChangesAsync();
+        return true;
     }
 
     public async Task<bool> RegisterDailyQCAsync(CreateDailyQCRequest request)
     {
-        try
+        using var ctx = _dbFactory.CreateContext();
+        var qc = new EquipmentDailyQC
         {
-            var response = await _httpClient.PostAsJsonAsync("equipment/qc", request);
-            return response.IsSuccessStatusCode;
-        }
-        catch
-        {
-            var store = await GetLocalStoreAsync();
-            await store.RegisterDailyQCAsync(request);
-            return true;
-        }
+            Id = Guid.NewGuid(),
+            EquipmentId = request.EquipmentId,
+            PerformedAt = request.PerformedAt,
+            PerformedByUserId = request.UserId ?? Guid.Empty,
+            Notes = request.Notes,
+            LotNumber = request.LotNumber,
+            IsPass = request.IsPass
+        };
+        ctx.EquipmentDailyQC.Add(qc);
+        await ctx.SaveChangesAsync();
+        return true;
     }
 
     public async Task<IEnumerable<EquipmentDailyQCDto>> GetDailyQCAsync(Guid equipmentId)
     {
-        try
-        {
-            return await _httpClient.GetFromJsonAsync<IEnumerable<EquipmentDailyQCDto>>($"equipment/{equipmentId}/qc")
-                   ?? new List<EquipmentDailyQCDto>();
-        }
-        catch
-        {
-            var store = await GetLocalStoreAsync();
-            return await store.GetDailyQCAsync(equipmentId);
-        }
+        using var ctx = _dbFactory.CreateContext();
+        return await ctx.EquipmentDailyQC
+            .Where(qc => qc.EquipmentId == equipmentId)
+            .OrderByDescending(qc => qc.PerformedAt)
+            .Take(100)
+            .Select(qc => new EquipmentDailyQCDto(qc.Id, qc.EquipmentId, qc.LotNumber, qc.IsPass, qc.Notes, qc.PerformedAt, ""))
+            .ToListAsync();
     }
 }

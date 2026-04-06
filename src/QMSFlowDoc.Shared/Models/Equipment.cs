@@ -47,6 +47,10 @@ public class Equipment
     public DateTime? LastCalibration { get; set; }
     public DateTime? NextCalibration { get; set; }
     public string? ManualPath { get; set; } // Path to PDF
+    public bool IsDeleted { get; set; } = false;
+
+    // V2: Optimistic concurrency
+    public byte[] RowVersion { get; set; } = Array.Empty<byte>();
 
     public List<MaintenancePlan> MaintenancePlans { get; set; } = new();
     public List<MaintenanceEvent> MaintenanceEvents { get; set; } = new();
@@ -82,6 +86,9 @@ public class MaintenanceEvent
     public string? CertificatePath { get; set; } // Calibration Cert
     public decimal? Cost { get; set; }
     public bool IsEfficiencyCheck { get; set; } // For Verification
+
+    // V2: Optimistic concurrency
+    public byte[] RowVersion { get; set; } = Array.Empty<byte>();
 }
 
 public class EquipmentHistory

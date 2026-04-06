@@ -51,6 +51,9 @@ public class Nonconformity
     public NCStatus Status { get; set; } = NCStatus.OPEN;
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
 
+    // V2: Optimistic concurrency
+    public byte[] RowVersion { get; set; } = Array.Empty<byte>();
+
     public List<CapaAction> Actions { get; set; } = new();
 }
 
@@ -100,6 +103,9 @@ public class Complaint
     public string? CorrectiveAction { get; set; }
     public ComplaintStatus Status { get; set; } = ComplaintStatus.OPEN;
     public DateTime? ClosedAt { get; set; }
+
+    // V2: Optimistic concurrency
+    public byte[] RowVersion { get; set; } = Array.Empty<byte>();
     
     public List<ComplaintAction> Actions { get; set; } = new();
 }

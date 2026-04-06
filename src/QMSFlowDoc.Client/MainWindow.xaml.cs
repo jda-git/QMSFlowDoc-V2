@@ -289,13 +289,7 @@ public sealed partial class MainWindow : Window
         // Helper
         async System.Threading.Tasks.Task<bool> Check(string key)
         {
-            foreach(var r in roles)
-            {
-                // Admin always has all
-                if (r == "Administrador") return true; 
-                if (await app.PermissionsService.HasPermissionAsync(r, key)) return true;
-            }
-            return false;
+            return await app.PermissionsService.HasPermissionAsync(key);
         }
 
         foreach (var item in RootNavigationView.MenuItems.OfType<NavigationViewItem>())

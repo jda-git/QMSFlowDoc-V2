@@ -71,14 +71,26 @@ public record EQAProviderDto(
 
 public record EQASchemeDto(
     Guid Id,
-    Guid ProviderId,
-    string ProviderName,
     string Name,
-    string? Matrix,
+    string ProviderName,
+    string? ProviderReference,
     string? Periodicity,
-    Guid? ResponsibleUserId,
-    string? Notes
-);
+    string Status,
+    string? Notes,
+    int TotalRounds,
+    int ValidRounds,
+    int UnsatisfactoryRounds,
+    string? Matrix = null,
+    Guid? ResponsibleUserId = null,
+    Guid ProviderId = default
+)
+{
+    // Legacy constructor for LocalDocumentStore compatibility
+    public EQASchemeDto(Guid id, Guid providerId, string providerName, string name, string? matrix, string? periodicity, Guid? responsibleUserId, string? notes)
+        : this(id, name, providerName, null, periodicity, "UNKNOWN", notes, 0, 0, 0, matrix, responsibleUserId, providerId)
+    {
+    }
+}
 
 public record EQARoundDto(
     Guid Id,

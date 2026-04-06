@@ -20,6 +20,9 @@ public class StaffProfile
     public DateTime? HiredAt { get; set; }
     public bool IsActive { get; set; } = true;
 
+    // V2: Optimistic concurrency
+    public byte[] RowVersion { get; set; } = Array.Empty<byte>();
+
     public List<StaffTraining> Trainings { get; set; } = new();
     public List<CompetencyEvaluation> CompetencyEvaluations { get; set; } = new();
     public List<StaffCompetencyStatus> CompetencyStatuses { get; set; } = new();

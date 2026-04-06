@@ -1,8 +1,9 @@
 using QMSFlowDoc.Shared.DTOs;
+using QMSFlowDoc.Shared.Models;
+using Microsoft.EntityFrameworkCore;
 using System;
 using System.Collections.Generic;
-using System.Net.Http;
-using System.Net.Http.Json;
+using System.Linq;
 using System.Threading.Tasks;
 
 namespace QMSFlowDoc.Client.Services;
@@ -26,181 +27,205 @@ public interface IAuthService
     bool IsAdmin { get; }
 }
 
+/// <summary>
+/// V2: Authentication service using SQL Server via EF Core.
+/// Validates credentials directly against the Users table with BCrypt.
+/// No HTTP fallback — all auth goes through the central database.
+/// </summary>
 public class AuthService : IAuthService
 {
-    private readonly HttpClient _httpClient;
-    private LocalDocumentStore? _localStore;
-    private readonly NetworkConfigStore _networkConfig;
-    
+    private readonly ClientDbContextFactory _dbFactory;
+
     public string? CurrentToken { get; private set; }
     public string? CurrentUsername { get; private set; }
     public Guid? CurrentUserId { get; private set; }
     public List<string> CurrentRoles { get; private set; } = new();
-    public bool IsAuthenticated => !string.IsNullOrEmpty(CurrentToken) || !string.IsNullOrEmpty(CurrentUsername);
+    public bool IsAuthenticated => !string.IsNullOrEmpty(CurrentUsername);
     public bool IsAdmin => CurrentRoles.Contains("Administrador");
 
-    public AuthService(HttpClient httpClient)
+    public AuthService(ClientDbContextFactory dbFactory)
     {
-        _httpClient = httpClient;
-        _networkConfig = new NetworkConfigStore();
-    }
-    
-    private async Task<LocalDocumentStore> GetLocalStoreAsync()
-    {
-        if (_localStore == null)
-        {
-            _localStore = new LocalDocumentStore(_networkConfig);
-            await _localStore.InitializeAsync();
-        }
-        return _localStore;
+        _dbFactory = dbFactory;
     }
 
     public async Task<bool> LoginAsync(string username, string password)
     {
-        // First try API authentication
         try
         {
-            var response = await _httpClient.PostAsJsonAsync("auth/login", new LoginRequest(username, password));
-            if (response.IsSuccessStatusCode)
+            using var ctx = _dbFactory.CreateContext();
+            var user = await ctx.Users
+                .Include(u => u.Roles)
+                .FirstOrDefaultAsync(u => u.Username == username && u.IsActive);
+
+            if (user == null) return false;
+
+            // Check if account is locked
+            if (user.LockedUntil.HasValue && user.LockedUntil.Value > DateTime.UtcNow)
+                return false;
+
+            // Verify password
+            if (!BCrypt.Net.BCrypt.Verify(password, user.PasswordHash))
             {
-                var result = await response.Content.ReadFromJsonAsync<LoginResponse>();
-                if (result != null)
-                {
-                    CurrentToken = result.Token;
-                    CurrentUsername = username;
-                    CurrentUserId = null; // API mode doesn't give us ID easily yet
-                    CurrentRoles = result.Roles ?? new List<string>();
-                    _httpClient.DefaultRequestHeaders.Authorization = 
-                        new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", CurrentToken);
-                    return true;
-                }
+                user.FailedLoginAttempts++;
+                if (user.FailedLoginAttempts >= 5)
+                    user.LockedUntil = DateTime.UtcNow.AddMinutes(15);
+                await ctx.SaveChangesAsync();
+                return false;
             }
+
+            // Success
+            user.FailedLoginAttempts = 0;
+            user.LockedUntil = null;
+            user.LastLoginAt = DateTime.UtcNow;
+            await ctx.SaveChangesAsync();
+
+            CurrentToken = $"v2_{user.Id}";
+            CurrentUsername = user.Username;
+            CurrentUserId = user.Id;
+            CurrentRoles = user.Roles.Select(r => r.RoleName).ToList();
+
+            // Set the user in the factory for audit logging
+            _dbFactory.SetCurrentUser(user.Username);
+
+            return true;
         }
         catch
         {
-            // API not available, try local authentication
+            return false;
         }
-        
-        // Fallback to local SQLite authentication
-        try
-        {
-            var localStore = await GetLocalStoreAsync();
-            var (success, userId, fullName, role) = await localStore.ValidateUserAsync(username, password);
-            
-            if (success && userId != null)
-            {
-                CurrentToken = $"local_{userId}"; // Pseudo-token for local mode
-                CurrentUsername = username;
-                CurrentUserId = Guid.Parse(userId);
-                CurrentRoles = new List<string> { role ?? "Usuario" };
-                return true;
-            }
-        }
-        catch
-        {
-            // Local auth also failed
-        }
-        
-        return false;
     }
 
     public async Task<Guid?> RegisterAsync(RegisterRequest request)
     {
-        try
+        using var ctx = _dbFactory.CreateContext();
+
+        // Check if username exists
+        if (await ctx.Users.AnyAsync(u => u.Username == request.Username))
+            throw new Exception($"El usuario '{request.Username}' ya existe.");
+
+        var user = new User
         {
-            var response = await _httpClient.PostAsJsonAsync("auth/register", request);
-            if (response.IsSuccessStatusCode)
-            {
-                var result = await response.Content.ReadFromJsonAsync<System.Text.Json.JsonElement>();
-                if (result.ValueKind != System.Text.Json.JsonValueKind.Undefined)
-                {
-                    var idStr = result.GetProperty("id").GetString();
-                    return idStr != null ? Guid.Parse(idStr) : null;
-                }
-            }
-            else
-            {
-                var error = await response.Content.ReadAsStringAsync();
-                throw new Exception(string.IsNullOrWhiteSpace(error) ? $"Error del servidor: {response.StatusCode}" : error);
-            }
-            return null;
-        }
-        catch (Exception)
+            Id = Guid.NewGuid(),
+            Username = request.Username,
+            FullName = request.FullName,
+            Email = request.Email,
+            PasswordHash = BCrypt.Net.BCrypt.HashPassword(request.Password),
+            IsActive = true,
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow
+        };
+
+        // Assign role
+        if (!string.IsNullOrEmpty(request.RoleName))
         {
-            // API failure, try local
-            try
-            {
-                var store = await GetLocalStoreAsync();
-                return await store.CreateUserAsync(request.Username, request.Password, request.FullName, request.Email, request.RoleName);
-            }
-            catch (Exception localEx)
-            {
-                // Both failed
-                throw new Exception($"Error en el registro local: {localEx.Message}");
-            }
+            var role = await ctx.Roles.FirstOrDefaultAsync(r => r.RoleName == request.RoleName);
+            if (role != null)
+                user.Roles.Add(role);
         }
+
+        ctx.Users.Add(user);
+        await ctx.SaveChangesAsync();
+        return user.Id;
     }
 
     public async Task PurgeUsersAsync()
     {
-        var response = await _httpClient.DeleteAsync("auth/purge-users");
-        response.EnsureSuccessStatusCode();
+        using var ctx = _dbFactory.CreateContext();
+        var users = await ctx.Users.ToListAsync();
+        ctx.Users.RemoveRange(users);
+        await ctx.SaveChangesAsync();
     }
 
     public async Task<bool> ChangePasswordAsync(ChangePasswordRequest request)
     {
-        var response = await _httpClient.PostAsJsonAsync("auth/change-password", request);
-        return response.IsSuccessStatusCode;
+        if (CurrentUserId == null) return false;
+
+        using var ctx = _dbFactory.CreateContext();
+        var user = await ctx.Users.FindAsync(CurrentUserId.Value);
+        if (user == null) return false;
+
+        if (!BCrypt.Net.BCrypt.Verify(request.CurrentPassword, user.PasswordHash))
+            return false;
+
+        user.PasswordHash = BCrypt.Net.BCrypt.HashPassword(request.NewPassword);
+        user.PasswordChangedAt = DateTime.UtcNow;
+        user.UpdatedAt = DateTime.UtcNow;
+        await ctx.SaveChangesAsync();
+        return true;
     }
 
     public async Task<bool> ResetPasswordAsync(Guid userId, ResetPasswordRequest request)
     {
-        var response = await _httpClient.PostAsJsonAsync($"auth/reset-password/{userId}", request);
-        return response.IsSuccessStatusCode;
+        using var ctx = _dbFactory.CreateContext();
+        var user = await ctx.Users.FindAsync(userId);
+        if (user == null) return false;
+
+        user.PasswordHash = BCrypt.Net.BCrypt.HashPassword(request.NewPassword);
+        user.PasswordChangedAt = DateTime.UtcNow;
+        user.UpdatedAt = DateTime.UtcNow;
+        await ctx.SaveChangesAsync();
+        return true;
     }
 
     public async Task<bool> UnlockAccountAsync(Guid userId)
     {
-        var response = await _httpClient.PostAsync($"auth/unlock/{userId}", null);
-        return response.IsSuccessStatusCode;
+        using var ctx = _dbFactory.CreateContext();
+        var user = await ctx.Users.FindAsync(userId);
+        if (user == null) return false;
+
+        user.LockedUntil = null;
+        user.FailedLoginAttempts = 0;
+        user.UpdatedAt = DateTime.UtcNow;
+        await ctx.SaveChangesAsync();
+        return true;
     }
 
     public async Task<bool> NeedsBootstrapAsync()
     {
         try
         {
-            return await _httpClient.GetFromJsonAsync<bool>("auth/needs-bootstrap");
+            using var ctx = _dbFactory.CreateContext();
+            return !await ctx.Users.AnyAsync();
         }
-        catch
-        {
-            // API not available — check local database
-            try
-            {
-                var store = await GetLocalStoreAsync();
-                var hasUsers = await store.HasAnyUsersAsync();
-                return !hasUsers; // needs bootstrap if no users exist
-            }
-            catch { return false; }
-        }
+        catch { return true; } // DB not ready = needs bootstrap
     }
 
     public async Task<bool> BootstrapAsync(RegisterRequest request)
     {
         try
         {
-            var response = await _httpClient.PostAsJsonAsync("auth/bootstrap", request);
-            if (response.IsSuccessStatusCode) return true;
-        }
-        catch { /* API not available, fall through to local */ }
+            using var ctx = _dbFactory.CreateContext();
 
-        // Local bootstrap: create admin user directly in SQLite
-        try
-        {
-            var store = await GetLocalStoreAsync();
-            var userId = await store.CreateUserAsync(
-                request.Username, request.Password,
-                request.FullName, request.Email, request.RoleName);
-            return userId != Guid.Empty;
+            // Ensure roles exist
+            if (!await ctx.Roles.AnyAsync())
+            {
+                ctx.Roles.AddRange(
+                    new Role { Id = Guid.NewGuid(), RoleName = "Administrador", Description = "Acceso completo al sistema" },
+                    new Role { Id = Guid.NewGuid(), RoleName = "Responsable Calidad", Description = "Gestión de calidad y documentación" },
+                    new Role { Id = Guid.NewGuid(), RoleName = "Técnico", Description = "Operaciones de laboratorio" },
+                    new Role { Id = Guid.NewGuid(), RoleName = "Usuario", Description = "Acceso de solo lectura" }
+                );
+                await ctx.SaveChangesAsync();
+            }
+
+            var adminRole = await ctx.Roles.FirstOrDefaultAsync(r => r.RoleName == "Administrador");
+
+            var user = new User
+            {
+                Id = Guid.NewGuid(),
+                Username = request.Username,
+                FullName = request.FullName,
+                Email = request.Email,
+                PasswordHash = BCrypt.Net.BCrypt.HashPassword(request.Password),
+                IsActive = true,
+                CreatedAt = DateTime.UtcNow,
+                UpdatedAt = DateTime.UtcNow
+            };
+            if (adminRole != null) user.Roles.Add(adminRole);
+
+            ctx.Users.Add(user);
+            await ctx.SaveChangesAsync();
+            return true;
         }
         catch { return false; }
     }
@@ -209,6 +234,7 @@ public class AuthService : IAuthService
     {
         CurrentToken = null;
         CurrentUsername = null;
-        _httpClient.DefaultRequestHeaders.Authorization = null;
+        CurrentUserId = null;
+        CurrentRoles.Clear();
     }
 }
