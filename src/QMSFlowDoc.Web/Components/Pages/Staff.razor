@@ -1,0 +1,1166 @@
+@page "/staff"
+@rendermode InteractiveServer
+@using QMSFlowDoc.Application.Services.Staff
+@using QMSFlowDoc.Shared.DTOs
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize]
+@inject IStaffService StaffService
+@inject IJSRuntime JS
+
+<PageTitle>Personal y Formación (ISO 15189) - QMSFlowDoc</PageTitle>
+
+<div class="staff-container py-4">
+    <!-- Header -->
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h1 class="h3 fw-bold text-dark mb-1"><i class="bi bi-people-fill text-primary me-2"></i>Personal y Formación</h1>
+            <p class="text-muted mb-0">Gestión de expedientes, capacitación técnica, evaluación de competencias y autorizaciones clínicas.</p>
+        </div>
+        <div class="d-flex gap-2">
+            <button class="btn btn-premium px-4" @onclick="OpenAddStaffModal">
+                <i class="bi bi-person-plus-fill me-2"></i> Registrar Empleado
+            </button>
+        </div>
+    </div>
+
+    <!-- Summary Cards -->
+    <div class="row g-3 mb-4">
+        <div class="col-md-3">
+            <div class="card border-0 shadow-sm rounded-4 p-3 bg-white border-start border-4 border-primary">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <span class="text-muted small d-block">Personal Registrado</span>
+                        <h3 class="fw-bold mb-0">@staffList.Count</h3>
+                    </div>
+                    <div class="bg-primary bg-opacity-10 text-primary rounded p-2.5">
+                        <i class="bi bi-person-badge fs-4"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card border-0 shadow-sm rounded-4 p-3 bg-white border-start border-4 border-info">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <span class="text-muted small d-block">Formación Registrada</span>
+                        <h3 class="fw-bold mb-0">@trainingActivities.Count</h3>
+                    </div>
+                    <div class="bg-info bg-opacity-10 text-info rounded p-2.5">
+                        <i class="bi bi-journal-bookmark-fill fs-4"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card border-0 shadow-sm rounded-4 p-3 bg-white border-start border-4 border-success">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <span class="text-muted small d-block">Evaluaciones Competencia</span>
+                        <h3 class="fw-bold mb-0">@competencyCatalog.Count</h3>
+                    </div>
+                    <div class="bg-success bg-opacity-10 text-success rounded p-2.5">
+                        <i class="bi bi-shield-check fs-4"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card border-0 shadow-sm rounded-4 p-3 bg-white border-start border-4 border-warning">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <span class="text-muted small d-block">Autorizaciones Clínicas</span>
+                        <h3 class="fw-bold mb-0 text-warning">@authorizationsCatalog.Count</h3>
+                    </div>
+                    <div class="bg-warning bg-opacity-10 text-warning rounded p-2.5">
+                        <i class="bi bi-pen-fill fs-4"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Navigation Tabs -->
+    <ul class="nav nav-tabs custom-tabs mb-4 border-bottom-0">
+        <li class="nav-item">
+            <button class="nav-link @(activeTab == "staff" ? "active text-primary fw-semibold" : "text-secondary")"
+                    @onclick='() => SetTab("staff")'>
+                <i class="bi bi-people-fill me-2"></i>Plantilla de Personal
+            </button>
+        </li>
+        <li class="nav-item">
+            <button class="nav-link @(activeTab == "training" ? "active text-primary fw-semibold" : "text-secondary")"
+                    @onclick='() => SetTab("training")'>
+                <i class="bi bi-book-half me-2"></i>Actividades Formativas
+            </button>
+        </li>
+        <li class="nav-item">
+            <button class="nav-link @(activeTab == "competencies" ? "active text-primary fw-semibold" : "text-secondary")"
+                    @onclick='() => SetTab("competencies")'>
+                <i class="bi bi-award-fill me-2"></i>Catálogo de Competencias
+            </button>
+        </li>
+        <li class="nav-item">
+            <button class="nav-link @(activeTab == "authorizations" ? "active text-primary fw-semibold" : "text-secondary")"
+                    @onclick='() => SetTab("authorizations")'>
+                <i class="bi bi-file-earmark-lock2-fill me-2"></i>Catálogo de Autorizaciones
+            </button>
+        </li>
+    </ul>
+
+    <!-- Main Content Area -->
+    <div class="card border-0 shadow-sm rounded-4 p-4 bg-white border">
+        @if (activeTab == "staff")
+        {
+            <div class="row mb-3 g-3 align-items-center justify-content-between">
+                <div class="col-md-6 col-lg-5">
+                    <div class="input-group">
+                        <span class="input-group-text bg-light border-end-0"><i class="bi bi-search text-muted"></i></span>
+                        <input type="text" class="form-control form-control-premium border-start-0 ps-1"
+                               placeholder="Buscar por nombre, cargo, dpto..."
+                               @bind="searchTerm" @bind:event="oninput" />
+                    </div>
+                </div>
+                <div class="col-md-4 col-lg-3">
+                    <div class="form-check form-switch pt-2">
+                        <input class="form-check-input" type="checkbox" id="showInactive" @bind="showInactive" @bind:after="LoadData" />
+                        <label class="form-check-label text-muted small" for="showInactive">Mostrar personal de baja</label>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Staff Grid -->
+            <div class="table-responsive">
+                <table class="table table-hover align-middle mb-0">
+                    <thead class="bg-light border-bottom text-muted small text-uppercase">
+                        <tr>
+                            <th class="ps-3">Nombre</th>
+                            <th>Cargo</th>
+                            <th>Departamento</th>
+                            <th>Autorizaciones</th>
+                            <th>Formaciones</th>
+                            <th>Estado</th>
+                            <th class="text-end pe-3">Acciones</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @if (!FilteredStaff.Any())
+                        {
+                            <tr>
+                                <td colspan="8" class="text-center py-5 text-muted">
+                                    <i class="bi bi-people fs-1 d-block mb-3 opacity-50"></i>
+                                    No se encontraron empleados registrados.
+                                </td>
+                            </tr>
+                        }
+                        else
+                        {
+                            @foreach (var staff in FilteredStaff)
+                            {
+                                <tr class="cursor-pointer" @onclick="() => SelectStaff(staff.Id)">
+                                    <td class="ps-3">
+                                        <div class="d-flex align-items-center">
+                                            <div class="avatar bg-primary text-white rounded-circle d-flex align-items-center justify-content-center me-3 fw-bold" style="width: 40px; height: 40px;">
+                                                @staff.FullName.Substring(0, Math.Min(2, staff.FullName.Length)).ToUpper()
+                                            </div>
+                                            <div>
+                                                <span class="fw-semibold text-dark d-block">@staff.FullName</span>
+                                            </div>
+                                        </div>
+                                    </td>
+                                    <td><span class="fw-medium text-secondary">@staff.PositionTitle</span></td>
+                                    <td><span class="badge bg-light text-secondary border">@staff.Department</span></td>
+                                    <td>
+                                        <span class="badge bg-success bg-opacity-10 text-success border border-success border-opacity-20 px-2 py-1">
+                                            <i class="bi bi-file-earmark-lock2-fill me-1"></i>@staff.CompetencyPassCount activas
+                                        </span>
+                                    </td>
+                                    <td>
+                                        <span class="badge bg-info bg-opacity-10 text-info border border-info border-opacity-20 px-2 py-1">
+                                            <i class="bi bi-mortarboard-fill me-1"></i>@staff.TrainingCount aptas
+                                        </span>
+                                    </td>
+                                    <td>
+                                        <span class="badge rounded-pill @(staff.IsActive ? "bg-success bg-opacity-10 text-success border border-success border-opacity-20" : "bg-danger bg-opacity-10 text-danger border border-danger border-opacity-20")">
+                                            @(staff.IsActive ? "Activo" : "Baja")
+                                        </span>
+                                    </td>
+                                    <td class="text-end pe-3" @onclick:stopPropagation="true">
+                                        <button class="btn btn-outline-secondary btn-sm rounded-3 px-3 me-1" @onclick="() => SelectStaff(staff.Id)">
+                                            <i class="bi bi-eye"></i> Expediente
+                                        </button>
+                                        <button class="btn btn-light btn-sm rounded-3 border px-2.5" @onclick="() => EditStaffProfile(staff)">
+                                            <i class="bi bi-pencil-square"></i>
+                                        </button>
+                                    </td>
+                                </tr>
+                            }
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+        else if (activeTab == "training")
+        {
+            <div class="d-flex justify-content-between align-items-center mb-3">
+                <span class="text-muted small">@trainingActivities.Count actividades de formación registradas</span>
+                <button class="btn btn-outline-primary btn-sm px-3" @onclick="OpenAddTrainingModal">
+                    <i class="bi bi-plus-circle me-1"></i> Nueva Actividad
+                </button>
+            </div>
+
+            <!-- Training Activities Table -->
+            <div class="table-responsive">
+                <table class="table table-hover align-middle mb-0">
+                    <thead class="bg-light border-bottom text-muted small text-uppercase">
+                        <tr>
+                            <th class="ps-3">Título de Actividad</th>
+                            <th>Proveedor</th>
+                            <th>Tipo</th>
+                            <th>Modalidad</th>
+                            <th>Fechas</th>
+                            <th>Horas</th>
+                            <th>Inscritos</th>
+                            <th class="text-end pe-3">Acciones</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var act in trainingActivities)
+                        {
+                            <tr>
+                                <td class="ps-3 fw-semibold text-dark">@act.Title</td>
+                                <td class="text-secondary">@act.Provider</td>
+                                <td><span class="badge bg-light text-primary border">@act.TrainingTypeName</span></td>
+                                <td><span class="badge bg-light text-secondary border">@act.Modality</span></td>
+                                <td class="text-muted small">@act.StartDate?.ToString("dd/MM/yyyy") - @act.EndDate?.ToString("dd/MM/yyyy")</td>
+                                <td class="fw-medium text-dark">@act.Hours.ToString("N1") hrs</td>
+                                <td>
+                                    <span class="badge bg-success bg-opacity-10 text-success border border-success border-opacity-20 px-2 py-1">
+                                        <i class="bi bi-people me-1"></i>@act.AssignedStaffCount aptos
+                                    </span>
+                                </td>
+                                <td class="text-end pe-3">
+                                    <button class="btn btn-sm btn-outline-primary px-3 rounded-3" @onclick="() => OpenAssignTrainingModal(act)">
+                                        <i class="bi bi-person-plus-fill me-1"></i> Asignar
+                                    </button>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+        else if (activeTab == "competencies")
+        {
+            <div class="d-flex justify-content-between align-items-center mb-3">
+                <span class="text-muted small">@competencyCatalog.Count competencias en catálogo</span>
+            </div>
+
+            <!-- Competency Catalog Table -->
+            <div class="table-responsive">
+                <table class="table table-hover align-middle mb-0">
+                    <thead class="bg-light border-bottom text-muted small text-uppercase">
+                        <tr>
+                            <th class="ps-3">Código</th>
+                            <th>Nombre de Competencia</th>
+                            <th>Área</th>
+                            <th>Subárea</th>
+                            <th>Ámbito de Rol</th>
+                            <th>Vigencia (Meses)</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var comp in competencyCatalog)
+                        {
+                            <tr>
+                                <td class="ps-3 fw-bold text-success font-monospace">@comp.Code</td>
+                                <td class="fw-semibold text-dark">@comp.Name</td>
+                                <td><span class="badge bg-light text-secondary border">@comp.Area</span></td>
+                                <td class="text-muted">@comp.SubArea</td>
+                                <td><span class="badge bg-light text-info border">@comp.RoleScope</span></td>
+                                <td class="text-dark">@comp.DefaultReassessmentMonths meses</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+        else if (activeTab == "authorizations")
+        {
+            <div class="d-flex justify-content-between align-items-center mb-3">
+                <span class="text-muted small">@authorizationsCatalog.Count autorizaciones clínicas definidas</span>
+            </div>
+
+            <!-- Authorizations Catalog Table -->
+            <div class="table-responsive">
+                <table class="table table-hover align-middle mb-0">
+                    <thead class="bg-light border-bottom text-muted small text-uppercase">
+                        <tr>
+                            <th class="ps-3">Código</th>
+                            <th>Nombre de Autorización</th>
+                            <th>Descripción</th>
+                            <th>Requiere Competencia</th>
+                            <th>Ámbito de Rol</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var auth in authorizationsCatalog)
+                        {
+                            <tr>
+                                <td class="ps-3 fw-bold text-warning font-monospace">@auth.Code</td>
+                                <td class="fw-semibold text-dark">@auth.Name</td>
+                                <td class="text-muted text-wrap" style="max-width: 300px;">@auth.Description</td>
+                                <td>
+                                    <span class="badge rounded-pill @(auth.RequiresCompetency ? "bg-danger bg-opacity-10 text-danger border border-danger border-opacity-20" : "bg-light text-secondary border")">
+                                        @(auth.RequiresCompetency ? "Sí" : "No")
+                                    </span>
+                                </td>
+                                <td><span class="badge bg-light text-info border">@auth.RoleScope</span></td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+    </div>
+</div>
+
+<!-- DRAWER: EXPEDIENTE DETALLADO DEL EMPLEADO -->
+@if (selectedStaffDetail != null)
+{
+    <div class="drawer-overlay" @onclick="CloseDrawer"></div>
+    <div class="drawer shadow-lg animate-slide-left p-4">
+        <div class="d-flex justify-content-between align-items-start border-bottom pb-3 mb-4">
+            <div>
+                <div class="d-flex align-items-center">
+                    <div class="avatar bg-primary text-white rounded-circle d-flex align-items-center justify-content-center me-3 fw-bold fs-4" style="width: 50px; height: 50px;">
+                        @selectedStaffDetail.FullName.Substring(0, Math.Min(2, selectedStaffDetail.FullName.Length)).ToUpper()
+                    </div>
+                    <div>
+                        <h4 class="fw-bold text-dark mb-0">@selectedStaffDetail.FullName</h4>
+                        <span class="text-muted small">@selectedStaffDetail.PositionTitle — @selectedStaffDetail.Department</span>
+                    </div>
+                </div>
+            </div>
+            <button type="button" class="btn-close" @onclick="CloseDrawer"></button>
+        </div>
+
+        <ul class="nav nav-pills custom-pills mb-4 bg-light p-1 rounded-3">
+            <li class="nav-item flex-fill">
+                <button class="nav-link w-100 text-center @(drawerTab == "training" ? "active" : "")" @onclick='() => SetDrawerTab("training")'>
+                    Formación
+                </button>
+            </li>
+            <li class="nav-item flex-fill">
+                <button class="nav-link w-100 text-center @(drawerTab == "competencies" ? "active" : "")" @onclick='() => SetDrawerTab("competencies")'>
+                    Competencias
+                </button>
+            </li>
+            <li class="nav-item flex-fill">
+                <button class="nav-link w-100 text-center @(drawerTab == "authorizations" ? "active" : "")" @onclick='() => SetDrawerTab("authorizations")'>
+                    Autorizaciones
+                </button>
+            </li>
+        </ul>
+
+        <div class="drawer-content" style="max-height: calc(100vh - 240px); overflow-y: auto;">
+            @if (drawerTab == "training")
+            {
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <h5 class="fw-bold mb-0">Historial de Capacitación</h5>
+                </div>
+                @if (!selectedStaffDetail.Trainings.Any())
+                {
+                    <p class="text-muted small text-center py-4">No hay formaciones asignadas.</p>
+                }
+                else
+                {
+                    @foreach (var tr in selectedStaffDetail.Trainings)
+                    {
+                        <div class="card border-0 bg-light p-3 rounded-3 mb-3">
+                            <h6 class="fw-semibold text-dark mb-1">@tr.Title</h6>
+                            <div class="d-flex justify-content-between align-items-center mt-2 small text-muted">
+                                <span>Proveedor: <strong>@tr.Provider</strong></span>
+                                <span>Resultado: <strong class="text-success">@tr.Result</strong></span>
+                            </div>
+                            <div class="text-end mt-2 small">
+                                <span class="text-muted me-3">Completado: @tr.CompletionDate.ToString("dd/MM/yyyy")</span>
+                            </div>
+                        </div>
+                    }
+                }
+            }
+            @if (drawerTab == "competencies")
+            {
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <h5 class="fw-bold mb-0">Evaluaciones de Competencia</h5>
+                    <button class="btn btn-primary btn-sm px-3" @onclick="OpenAddEvaluationModal">
+                        <i class="bi bi-shield-plus me-1"></i> Evaluar
+                    </button>
+                </div>
+                @if (!selectedStaffDetail.CompetencyEvaluations.Any())
+                {
+                    <p class="text-muted small text-center py-4">Sin evaluaciones registradas.</p>
+                }
+                else
+                {
+                    @foreach (var ev in selectedStaffDetail.CompetencyEvaluations)
+                    {
+                        <div class="card border-0 bg-light p-3 rounded-3 mb-3">
+                            <div class="d-flex justify-content-between align-items-center mb-1">
+                                <span class="fw-bold text-success small">@ev.Area</span>
+                                <span class="badge rounded-pill @(ev.Outcome == "COMPETENTE" || ev.Outcome == "PASS" ? "bg-success text-white" : "bg-danger text-white")">
+                                    @ev.Outcome
+                                </span>
+                            </div>
+                            <h6 class="fw-semibold text-dark">@ev.CompetencyName</h6>
+                            <p class="text-muted small mb-2">@ev.Evidence</p>
+                            <div class="d-flex justify-content-between align-items-center small text-muted">
+                                <span>Evaluado por: @ev.EvaluatorName</span>
+                                <span>Vence: @ev.ValidUntil?.ToString("dd/MM/yyyy")</span>
+                            </div>
+                        </div>
+                    }
+                }
+            }
+            @if (drawerTab == "authorizations")
+            {
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <h5 class="fw-bold mb-0">Firmas y Procesos Autorizados</h5>
+                    <button class="btn btn-warning btn-sm text-dark px-3 fw-medium" @onclick="OpenAddAuthorizationModal">
+                        <i class="bi bi-key me-1"></i> Autorizar
+                    </button>
+                </div>
+                @if (!selectedStaffDetail.Authorizations.Any())
+                {
+                    <p class="text-muted small text-center py-4">Sin autorizaciones vigentes.</p>
+                }
+                else
+                {
+                    @foreach (var auth in selectedStaffDetail.Authorizations)
+                    {
+                        <div class="card border-0 bg-light p-3 rounded-3 mb-3">
+                            <div class="d-flex justify-content-between align-items-center mb-1">
+                                <span class="badge bg-success rounded-pill">@auth.Status</span>
+                            </div>
+                            <h6 class="fw-semibold text-dark">@auth.AuthorizationName</h6>
+                            <div class="d-flex justify-content-between align-items-center mt-2 small text-muted">
+                                <span>Autorizó: @auth.GrantedByName</span>
+                                <span>Vence: @auth.ValidUntil?.ToString("dd/MM/yyyy")</span>
+                            </div>
+                        </div>
+                    }
+                }
+            }
+        </div>
+    </div>
+}
+
+<!-- MODAL: REGISTRAR / EDITAR PERFIL DE PERSONAL -->
+@if (showStaffModal)
+{
+    <div class="modal fade show d-block" style="background: rgba(0,0,0,0.5)">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content card shadow border-0 rounded-4 w-100">
+                <div class="card-header bg-primary text-white py-3 border-0 rounded-top-4 d-flex justify-content-between">
+                    <h5 class="mb-0 fw-bold">
+                        <i class="bi bi-person-badge-fill me-2"></i>
+                        @(isEditingStaff ? "Editar Perfil de Empleado" : "Registrar Empleado")
+                    </h5>
+                    <button type="button" class="btn-close btn-close-white" @onclick="() => showStaffModal = false"></button>
+                </div>
+                <div class="card-body p-4">
+                    <EditForm Model="staffModel" OnValidSubmit="SaveStaffProfile">
+                        <div class="row g-3">
+                            <div class="col-12">
+                                <label class="form-label fw-medium text-secondary small">Vincular a Usuario del Sistema</label>
+                                <InputSelect class="form-select form-select-premium" @bind-Value="staffModel.UserId">
+                                    <option value="">-- No vincular a ningún usuario --</option>
+                                    @foreach (var u in usersLookup)
+                                    {
+                                        <option value="@u.Id">@u.FullName (@u.Email)</option>
+                                    }
+                                </InputSelect>
+                            </div>
+                            <div class="col-12">
+                                <label class="form-label fw-medium text-secondary small">Cargo o Puesto de Trabajo</label>
+                                <InputText class="form-control form-control-premium" @bind-Value="staffModel.PositionTitle" placeholder="Ej. Responsable Técnico, Analista..." />
+                            </div>
+                            <div class="col-12">
+                                <label class="form-label fw-medium text-secondary small">Departamento / Sección</label>
+                                <InputText class="form-control form-control-premium" @bind-Value="staffModel.Department" placeholder="Ej. Bioquímica, Inmunología..." />
+                            </div>
+                            <div class="col-6">
+                                <label class="form-label fw-medium text-secondary small">Fecha de Alta / Contrato</label>
+                                <InputDate class="form-control form-control-premium" @bind-Value="staffModel.HiredAt" />
+                            </div>
+                            <div class="col-6">
+                                <label class="form-label fw-medium text-secondary small">Estado del Personal</label>
+                                <div class="form-check form-switch pt-2">
+                                    <InputCheckbox class="form-check-input" id="staffIsActive" @bind-Value="staffModel.IsActive" />
+                                    <label class="form-check-label text-muted small" for="staffIsActive">Personal en Activo</label>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="d-flex gap-2 justify-content-end mt-4">
+                            <button type="button" class="btn btn-light" @onclick="() => showStaffModal = false">Cancelar</button>
+                            <button type="submit" class="btn btn-primary px-4">Guardar Cambios</button>
+                        </div>
+                    </EditForm>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+<!-- MODAL: REGISTRAR ACTIVIDAD FORMATIVA -->
+@if (showTrainingModal)
+{
+    <div class="modal fade show d-block" style="background: rgba(0,0,0,0.5)">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content card shadow border-0 rounded-4 w-100">
+                <div class="card-header bg-info text-white py-3 border-0 rounded-top-4 d-flex justify-content-between">
+                    <h5 class="mb-0 fw-bold">
+                        <i class="bi bi-journal-bookmark-fill me-2"></i>Nueva Actividad de Formación
+                    </h5>
+                    <button type="button" class="btn-close btn-close-white" @onclick="() => showTrainingModal = false"></button>
+                </div>
+                <div class="card-body p-4">
+                    <EditForm Model="trainingModel" OnValidSubmit="SaveTrainingActivity">
+                        <div class="row g-3">
+                            <div class="col-12">
+                                <label class="form-label fw-medium text-secondary small">Título de la Formación</label>
+                                <InputText class="form-control form-control-premium" @bind-Value="trainingModel.Title" placeholder="Ej. Curso de Trazabilidad ISO 15189" required />
+                            </div>
+                            <div class="col-12">
+                                <label class="form-label fw-medium text-secondary small">Proveedor / Entidad Organizadora</label>
+                                <InputText class="form-control form-control-premium" @bind-Value="trainingModel.Provider" placeholder="Ej. Colegio de Biólogos" />
+                            </div>
+                            <div class="col-6">
+                                <label class="form-label fw-medium text-secondary small">Tipo de Formación</label>
+                                <InputSelect class="form-select form-select-premium" @bind-Value="trainingModel.TrainingTypeId">
+                                    <option value="">-- Seleccionar --</option>
+                                    @foreach (var type in trainingTypeCatalog)
+                                    {
+                                        <option value="@type.Id">@type.Name</option>
+                                    }
+                                </InputSelect>
+                            </div>
+                            <div class="col-6">
+                                <label class="form-label fw-medium text-secondary small">Modalidad</label>
+                                <InputSelect class="form-select form-select-premium" @bind-Value="trainingModel.Modality">
+                                    <option value="PRESENCIAL">Presencial</option>
+                                    <option value="ONLINE">Online</option>
+                                    <option value="MIXTA">Mixta</option>
+                                </InputSelect>
+                            </div>
+                            <div class="col-6">
+                                <label class="form-label fw-medium text-secondary small">F. Inicio</label>
+                                <InputDate class="form-control form-control-premium" @bind-Value="trainingModel.StartDate" />
+                            </div>
+                            <div class="col-6">
+                                <label class="form-label fw-medium text-secondary small">F. Fin</label>
+                                <InputDate class="form-control form-control-premium" @bind-Value="trainingModel.EndDate" />
+                            </div>
+                            <div class="col-6">
+                                <label class="form-label fw-medium text-secondary small">Horas Totales</label>
+                                <InputNumber class="form-control form-control-premium" @bind-Value="trainingModel.Hours" />
+                            </div>
+                            <div class="col-6">
+                                <label class="form-label fw-medium text-secondary small">Créditos</label>
+                                <InputText class="form-control form-control-premium" @bind-Value="trainingModel.Credits" placeholder="Ej. 1.2 CFC" />
+                            </div>
+                            <div class="col-12">
+                                <div class="form-check form-switch pt-2">
+                                    <InputCheckbox class="form-check-input" id="trainingIsInternal" @bind-Value="trainingModel.IsInternal" />
+                                    <label class="form-check-label text-muted small" for="trainingIsInternal">¿Es una formación interna del laboratorio?</label>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="d-flex gap-2 justify-content-end mt-4">
+                            <button type="button" class="btn btn-light" @onclick="() => showTrainingModal = false">Cancelar</button>
+                            <button type="submit" class="btn btn-info text-white px-4">Crear Actividad</button>
+                        </div>
+                    </EditForm>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+<!-- MODAL: ASIGNAR FORMACIÓN A UN EMPLEADO -->
+@if (showAssignTrainingModal)
+{
+    <div class="modal fade show d-block" style="background: rgba(0,0,0,0.5)">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content card shadow border-0 rounded-4 w-100">
+                <div class="card-header bg-primary text-white py-3 border-0 rounded-top-4 d-flex justify-content-between">
+                    <h5 class="mb-0 fw-bold">
+                        <i class="bi bi-mortarboard-fill me-2"></i>Asignar Formación a Empleado
+                    </h5>
+                    <button type="button" class="btn-close btn-close-white" @onclick="() => showAssignTrainingModal = false"></button>
+                </div>
+                <div class="card-body p-4">
+                    <h6 class="fw-bold mb-3 text-secondary">Actividad: @selectedActivity?.Title</h6>
+                    <EditForm Model="assignmentModel" OnValidSubmit="SaveAssignment">
+                        <div class="row g-3">
+                            <div class="col-12">
+                                <label class="form-label fw-medium text-secondary small">Empleado</label>
+                                <InputSelect class="form-select form-select-premium" @bind-Value="assignmentModel.StaffId">
+                                    <option value="">-- Seleccionar --</option>
+                                    @foreach (var s in staffList)
+                                    {
+                                        <option value="@s.Id">@s.FullName</option>
+                                    }
+                                </InputSelect>
+                            </div>
+                            <div class="col-6">
+                                <label class="form-label fw-medium text-secondary small">Rol de Participación</label>
+                                <InputSelect class="form-select form-select-premium" @bind-Value="assignmentModel.ParticipationRole">
+                                    <option value="ASISTENTE">Asistente</option>
+                                    <option value="PONENTE">Ponente / Docente</option>
+                                </InputSelect>
+                            </div>
+                            <div class="col-6">
+                                <label class="form-label fw-medium text-secondary small">Resultado</label>
+                                <InputSelect class="form-select form-select-premium" @bind-Value="assignmentModel.Result">
+                                    <option value="APTO">Apto</option>
+                                    <option value="NO_APTO">No Apto</option>
+                                </InputSelect>
+                            </div>
+                            <div class="col-6">
+                                <label class="form-label fw-medium text-secondary small">Fecha de Finalización</label>
+                                <InputDate class="form-control form-control-premium" @bind-Value="assignmentModel.CompletionDate" />
+                            </div>
+                            <div class="col-6">
+                                <label class="form-label fw-medium text-secondary small">Puntuación / Nota (opcional)</label>
+                                <InputText class="form-control form-control-premium" @bind-Value="assignmentModel.Score" placeholder="Ej. Aprobado, 95/100" />
+                            </div>
+                        </div>
+
+                        <div class="d-flex gap-2 justify-content-end mt-4">
+                            <button type="button" class="btn btn-light" @onclick="() => showAssignTrainingModal = false">Cancelar</button>
+                            <button type="submit" class="btn btn-primary px-4">Confirmar Asignación</button>
+                        </div>
+                    </EditForm>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+<!-- MODAL: REGISTRAR EVALUACIÓN DE COMPETENCIA -->
+@if (showEvaluationModal)
+{
+    <div class="modal fade show d-block" style="background: rgba(0,0,0,0.5)">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content card shadow border-0 rounded-4 w-100">
+                <div class="card-header bg-success text-white py-3 border-0 rounded-top-4 d-flex justify-content-between">
+                    <h5 class="mb-0 fw-bold">
+                        <i class="bi bi-shield-check me-2"></i>Evaluar Competencia Técnica
+                    </h5>
+                    <button type="button" class="btn-close btn-close-white" @onclick="() => showEvaluationModal = false"></button>
+                </div>
+                <div class="card-body p-4">
+                    <h6 class="fw-bold mb-3 text-secondary">Empleado: @selectedStaffDetail?.FullName</h6>
+                    <EditForm Model="evaluationModel" OnValidSubmit="SaveCompetencyEvaluation">
+                        <div class="row g-3">
+                            <div class="col-12">
+                                <label class="form-label fw-medium text-secondary small">Competencia a Evaluar</label>
+                                <InputSelect class="form-select form-select-premium" @bind-Value="evaluationModel.CompetencyId">
+                                    <option value="">-- Seleccionar --</option>
+                                    @foreach (var c in competencyCatalog)
+                                    {
+                                        <option value="@c.Id">@c.Code - @c.Name</option>
+                                    }
+                                </InputSelect>
+                            </div>
+                            <div class="col-12">
+                                <label class="form-label fw-medium text-secondary small">Evaluador</label>
+                                <InputSelect class="form-select form-select-premium" @bind-Value="evaluationModel.EvaluatorStaffId">
+                                    <option value="">-- Seleccionar Evaluador --</option>
+                                    @foreach (var s in staffList)
+                                    {
+                                        <option value="@s.Id">@s.FullName</option>
+                                    }
+                                </InputSelect>
+                            </div>
+                            <div class="col-6">
+                                <label class="form-label fw-medium text-secondary small">Fecha de Evaluación</label>
+                                <InputDate class="form-control form-control-premium" @bind-Value="evaluationModel.EvaluationDate" />
+                            </div>
+                            <div class="col-6">
+                                <label class="form-label fw-medium text-secondary small">Resultado / Calificación</label>
+                                <InputSelect class="form-select form-select-premium" @bind-Value="evaluationModel.Outcome">
+                                    <option value="COMPETENTE">Competente (Apto)</option>
+                                    <option value="NO_COMPETENTE">No Competente</option>
+                                </InputSelect>
+                            </div>
+                            <div class="col-12">
+                                <label class="form-label fw-medium text-secondary small">Observaciones / Conclusiones</label>
+                                <InputTextArea class="form-control form-control-premium" @bind-Value="evaluationModel.Findings" placeholder="Describa brevemente los hallazgos y evidencias observadas..." rows="3" />
+                            </div>
+                        </div>
+
+                        <div class="d-flex gap-2 justify-content-end mt-4">
+                            <button type="button" class="btn btn-light" @onclick="() => showEvaluationModal = false">Cancelar</button>
+                            <button type="submit" class="btn btn-success px-4">Registrar Evaluación</button>
+                        </div>
+                    </EditForm>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+<!-- MODAL: CONCEDER AUTORIZACIÓN CLÍNICA -->
+@if (showAuthorizationModal)
+{
+    <div class="modal fade show d-block" style="background: rgba(0,0,0,0.5)">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content card shadow border-0 rounded-4 w-100">
+                <div class="card-header bg-warning text-dark py-3 border-0 rounded-top-4 d-flex justify-content-between">
+                    <h5 class="mb-0 fw-bold">
+                        <i class="bi bi-key me-2"></i>Conceder Autorización de Firma/Proceso
+                    </h5>
+                    <button type="button" class="btn-close" @onclick="() => showAuthorizationModal = false"></button>
+                </div>
+                <div class="card-body p-4">
+                    <h6 class="fw-bold mb-3 text-secondary">Empleado: @selectedStaffDetail?.FullName</h6>
+                    <EditForm Model="grantModel" OnValidSubmit="SaveAuthorization">
+                        <div class="row g-3">
+                            <div class="col-12">
+                                <label class="form-label fw-medium text-secondary small">Autorización / Procedimiento</label>
+                                <InputSelect class="form-select form-select-premium" @bind-Value="grantModel.AuthorizationId">
+                                    <option value="">-- Seleccionar --</option>
+                                    @foreach (var a in authorizationsCatalog)
+                                    {
+                                        <option value="@a.Id">@a.Code - @a.Name</option>
+                                    }
+                                </InputSelect>
+                            </div>
+                            <div class="col-6">
+                                <label class="form-label fw-medium text-secondary small">Vigente Desde</label>
+                                <InputDate class="form-control form-control-premium" @bind-Value="grantModel.ValidFrom" />
+                            </div>
+                            <div class="col-6">
+                                <label class="form-label fw-medium text-secondary small">Vence el (opcional)</label>
+                                <InputDate class="form-control form-control-premium" @bind-Value="grantModel.ValidUntil" />
+                            </div>
+                        </div>
+
+                        <div class="d-flex gap-2 justify-content-end mt-4">
+                            <button type="button" class="btn btn-light" @onclick="() => showAuthorizationModal = false">Cancelar</button>
+                            <button type="submit" class="btn btn-warning text-dark px-4 fw-medium">Conceder Autorización</button>
+                        </div>
+                    </EditForm>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+<style>
+    .drawer-overlay {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100vw;
+        height: 100vh;
+        background: rgba(0, 0, 0, 0.4);
+        z-index: 1040;
+    }
+
+    .drawer {
+        position: fixed;
+        top: 0;
+        right: 0;
+        width: 500px;
+        height: 100vh;
+        background: #fff;
+        z-index: 1050;
+        overflow-y: auto;
+        border-left: 1px solid #dee2e6;
+    }
+
+    .custom-tabs .nav-link {
+        border: none;
+        border-bottom: 3px solid transparent;
+        border-radius: 0;
+        padding: 0.75rem 1.25rem;
+    }
+
+    .custom-tabs .nav-link.active {
+        border-bottom-color: #0d6efd;
+        background-color: transparent;
+    }
+
+    .custom-pills .nav-link {
+        border-radius: 0.375rem;
+        padding: 0.5rem;
+        color: #6c757d;
+        font-weight: 500;
+        font-size: 0.9rem;
+    }
+
+    .custom-pills .nav-link.active {
+        background-color: #0d6efd;
+        color: #fff;
+    }
+
+    .cursor-pointer {
+        cursor: pointer;
+    }
+
+    .btn-premium {
+        background: linear-gradient(135deg, #0d6efd 0%, #084298 100%);
+        color: white;
+        border: none;
+        border-radius: 0.5rem;
+        transition: opacity 0.2s;
+    }
+
+    .btn-premium:hover {
+        opacity: 0.95;
+        color: white;
+    }
+
+    .form-control-premium, .form-select-premium {
+        border-radius: 0.5rem;
+        border: 1px solid #ced4da;
+        padding: 0.6rem 0.8rem;
+    }
+
+    .form-control-premium:focus, .form-select-premium:focus {
+        border-color: #0d6efd;
+        box-shadow: 0 0 0 0.25rem rgba(13, 110, 253, 0.15);
+    }
+</style>
+
+@code {
+    private string activeTab = "staff";
+    private string drawerTab = "training";
+    private string searchTerm = string.Empty;
+    private bool showInactive = false;
+
+    private List<StaffListDto> staffList = new();
+    private List<TrainingActivityExtendedDto> trainingActivities = new();
+    private List<CompetencyCatalogDto> competencyCatalog = new();
+    private List<AuthorizationCatalogDto> authorizationsCatalog = new();
+    private List<TrainingTypeCatalogDto> trainingTypeCatalog = new();
+    private List<UserLookupDto> usersLookup = new();
+
+    private StaffExpedienteDto? selectedStaffDetail;
+
+    // Modals visibility
+    private bool showStaffModal = false;
+    private bool showTrainingModal = false;
+    private bool showAssignTrainingModal = false;
+    private bool showEvaluationModal = false;
+    private bool showAuthorizationModal = false;
+
+    private bool isEditingStaff = false;
+
+    // Form Models
+    private StaffModel staffModel = new();
+    private TrainingModel trainingModel = new();
+    private AssignmentModel assignmentModel = new();
+    private EvaluationModel evaluationModel = new();
+    private GrantModel grantModel = new();
+
+    private TrainingActivityExtendedDto? selectedActivity;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadData();
+    }
+
+    private async Task LoadData()
+    {
+        staffList = await StaffService.GetStaffListAsync(showInactive);
+        trainingActivities = await StaffService.GetTrainingActivitiesAsync();
+        competencyCatalog = await StaffService.GetCompetencyCatalogAsync();
+        authorizationsCatalog = await StaffService.GetAuthorizationCatalogAsync();
+        trainingTypeCatalog = await StaffService.GetTrainingTypeCatalogAsync();
+        usersLookup = await StaffService.GetAvailableUsersLookupAsync();
+    }
+
+    private void SetTab(string tab)
+    {
+        activeTab = tab;
+    }
+
+    private void SetDrawerTab(string tab)
+    {
+        drawerTab = tab;
+    }
+
+    private async Task SelectStaff(Guid staffId)
+    {
+        selectedStaffDetail = await StaffService.GetStaffExpedienteAsync(staffId);
+        drawerTab = "training";
+    }
+
+    private void CloseDrawer()
+    {
+        selectedStaffDetail = null;
+    }
+
+    private IEnumerable<StaffListDto> FilteredStaff =>
+        staffList.Where(s =>
+            string.IsNullOrEmpty(searchTerm) ||
+            s.FullName.Contains(searchTerm, StringComparison.OrdinalIgnoreCase) ||
+            (s.PositionTitle != null && s.PositionTitle.Contains(searchTerm, StringComparison.OrdinalIgnoreCase)) ||
+            (s.Department != null && s.Department.Contains(searchTerm, StringComparison.OrdinalIgnoreCase))
+        );
+
+    // MODAL TRIGGERS
+
+    private void OpenAddStaffModal()
+    {
+        isEditingStaff = false;
+        staffModel = new StaffModel { IsActive = true, HiredAt = DateTime.Today };
+        showStaffModal = true;
+    }
+
+    private void EditStaffProfile(StaffListDto profile)
+    {
+        isEditingStaff = true;
+        staffModel = new StaffModel
+        {
+            Id = profile.Id,
+            UserId = profile.UserId?.ToString() ?? "",
+            PositionTitle = profile.PositionTitle ?? "",
+            Department = profile.Department ?? "",
+            HiredAt = DateTime.Today, // default placeholder or query detail if needed
+            IsActive = profile.IsActive
+        };
+        showStaffModal = true;
+    }
+
+    private async Task SaveStaffProfile()
+    {
+        Guid? uId = string.IsNullOrEmpty(staffModel.UserId) ? null : Guid.Parse(staffModel.UserId);
+        var req = new CreateStaffProfileRequest(uId ?? Guid.Empty, staffModel.PositionTitle, staffModel.Department, staffModel.HiredAt);
+
+        if (isEditingStaff && staffModel.Id.HasValue)
+        {
+            // En V2 original update profile logic or delete/recreate can be invoked
+            // For now update positional info
+            var updateReq = new UpdateStaffProfileRequest(
+                staffModel.Id.Value,
+                "", // Will fetch or preserve fullname inside service
+                null,
+                staffModel.PositionTitle,
+                staffModel.Department,
+                staffModel.HiredAt,
+                "",
+                staffModel.IsActive
+            );
+            // Si el servicio no tiene update completo, usamos Create/Update combinados
+            await StaffService.UpdateStaffProfileAsync(staffModel.Id.Value, req);
+        }
+        else
+        {
+            await StaffService.CreateStaffProfileAsync(req);
+        }
+
+        showStaffModal = false;
+        await LoadData();
+    }
+
+    private void OpenAddTrainingModal()
+    {
+        trainingModel = new TrainingModel { StartDate = DateTime.Today, EndDate = DateTime.Today, Hours = 8 };
+        showTrainingModal = true;
+    }
+
+    private async Task SaveTrainingActivity()
+    {
+        if (trainingModel.TrainingTypeId == Guid.Empty) return;
+
+        var req = new CreateTrainingActivityRequest(
+            trainingModel.Title,
+            trainingModel.Provider,
+            trainingModel.TrainingTypeId,
+            trainingModel.Modality,
+            trainingModel.StartDate,
+            trainingModel.EndDate,
+            trainingModel.Hours,
+            trainingModel.Description,
+            trainingModel.IsInternal
+        );
+
+        await StaffService.CreateTrainingActivityAsync(req);
+        showTrainingModal = false;
+        await LoadData();
+    }
+
+    private void OpenAssignTrainingModal(TrainingActivityExtendedDto act)
+    {
+        selectedActivity = act;
+        assignmentModel = new AssignmentModel
+        {
+            TrainingActivityId = act.Id,
+            ParticipationRole = "ASISTENTE",
+            Result = "APTO",
+            CompletionDate = DateTime.Today
+        };
+        showAssignTrainingModal = true;
+    }
+
+    private async Task SaveAssignment()
+    {
+        if (assignmentModel.StaffId == Guid.Empty) return;
+
+        var req = new AssignStaffTrainingRequest(
+            assignmentModel.StaffId,
+            assignmentModel.TrainingActivityId,
+            assignmentModel.ParticipationRole,
+            assignmentModel.Result,
+            assignmentModel.Score,
+            assignmentModel.CompletionDate,
+            null,
+            assignmentModel.Notes
+        );
+
+        await StaffService.AssignTrainingAsync(req);
+        showAssignTrainingModal = false;
+        await LoadData();
+    }
+
+    private void OpenAddEvaluationModal()
+    {
+        if (selectedStaffDetail == null) return;
+        evaluationModel = new EvaluationModel
+        {
+            StaffId = selectedStaffDetail.Id,
+            EvaluationDate = DateTime.Today,
+            Outcome = "COMPETENTE"
+        };
+        showEvaluationModal = true;
+    }
+
+    private async Task SaveCompetencyEvaluation()
+    {
+        if (evaluationModel.CompetencyId == Guid.Empty || evaluationModel.EvaluatorStaffId == Guid.Empty) return;
+
+        var comp = competencyCatalog.First(c => c.Id == evaluationModel.CompetencyId);
+        var outcomeEnum = evaluationModel.Outcome == "COMPETENTE" ? QMSFlowDoc.Shared.Models.CompetencyOutcome.PASS : QMSFlowDoc.Shared.Models.CompetencyOutcome.FAIL;
+
+        var req = new AssessCompetencyRequest(
+            evaluationModel.StaffId,
+            comp.Name,
+            comp.Area,
+            outcomeEnum,
+            evaluationModel.EvaluationDate,
+            evaluationModel.EvaluationDate.AddMonths(comp.DefaultReassessmentMonths),
+            evaluationModel.Findings,
+            evaluationModel.EvaluatorStaffId
+        );
+
+        await StaffService.RecordCompetencyEvaluationAsync(req);
+        showEvaluationModal = false;
+        if (selectedStaffDetail != null)
+        {
+            await SelectStaff(selectedStaffDetail.Id);
+        }
+        await LoadData();
+    }
+
+    private void OpenAddAuthorizationModal()
+    {
+        if (selectedStaffDetail == null) return;
+        grantModel = new GrantModel
+        {
+            StaffId = selectedStaffDetail.Id,
+            ValidFrom = DateTime.Today
+        };
+        showAuthorizationModal = true;
+    }
+
+    private async Task SaveAuthorization()
+    {
+        if (grantModel.AuthorizationId == Guid.Empty) return;
+
+        var auth = authorizationsCatalog.First(a => a.Id == grantModel.AuthorizationId);
+        Guid grantedBy = Guid.Empty; // System admin or current user fallback
+
+        var req = new GrantAuthorizationRequest(
+            grantModel.StaffId,
+            auth.Name,
+            auth.Description,
+            grantModel.ValidFrom,
+            grantModel.ValidUntil,
+            grantedBy,
+            null,
+            null
+        );
+
+        await StaffService.GrantAuthorizationAsync(req);
+        showAuthorizationModal = false;
+        if (selectedStaffDetail != null)
+        {
+            await SelectStaff(selectedStaffDetail.Id);
+        }
+        await LoadData();
+    }
+
+    // INTERNAL MODELS
+
+    public class StaffModel
+    {
+        public Guid? Id { get; set; }
+        public string UserId { get; set; } = string.Empty;
+        public string PositionTitle { get; set; } = string.Empty;
+        public string Department { get; set; } = string.Empty;
+        public DateTime? HiredAt { get; set; }
+        public bool IsActive { get; set; } = true;
+    }
+
+    public class TrainingModel
+    {
+        public string Title { get; set; } = string.Empty;
+        public string? Provider { get; set; }
+        public Guid TrainingTypeId { get; set; }
+        public string Modality { get; set; } = "PRESENCIAL";
+        public DateTime? StartDate { get; set; }
+        public DateTime? EndDate { get; set; }
+        public decimal Hours { get; set; }
+        public string? Credits { get; set; }
+        public string? Description { get; set; }
+        public bool IsInternal { get; set; }
+        public string? InternalDepartment { get; set; }
+    }
+
+    public class AssignmentModel
+    {
+        public Guid StaffId { get; set; }
+        public Guid TrainingActivityId { get; set; }
+        public string ParticipationRole { get; set; } = "ASISTENTE";
+        public string? Result { get; set; } = "APTO";
+        public string? Score { get; set; }
+        public DateTime? CompletionDate { get; set; }
+        public string? Notes { get; set; }
+    }
+
+    public class EvaluationModel
+    {
+        public Guid StaffId { get; set; }
+        public Guid CompetencyId { get; set; }
+        public DateTime EvaluationDate { get; set; }
+        public Guid EvaluatorStaffId { get; set; }
+        public string Outcome { get; set; } = "COMPETENTE";
+        public string? Findings { get; set; }
+        public string? CorrectiveActions { get; set; }
+    }
+
+    public class GrantModel
+    {
+        public Guid StaffId { get; set; }
+        public Guid AuthorizationId { get; set; }
+        public DateTime ValidFrom { get; set; }
+        public DateTime? ValidUntil { get; set; }
+    }
+}

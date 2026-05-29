@@ -19,6 +19,21 @@ namespace QMSFlowDoc.Infrastructure.Seed
             // 1. Apply EF migrations to target database
             await context.Database.MigrateAsync();
 
+            // Fix invalid Guid values in database from older legacy seeds
+            try
+            {
+                await context.Database.ExecuteSqlRawAsync("PRAGMA foreign_keys = OFF;");
+                await context.Database.ExecuteSqlRawAsync("UPDATE StaffAuthorizations SET AuthorizationId = 'e1c0de00-0000-0000-0000-000000000001' WHERE AuthorizationId = 'auth-encender';");
+                await context.Database.ExecuteSqlRawAsync("UPDATE StaffAuthorizations SET AuthorizationId = 'e1c0de00-0000-0000-0000-000000000002' WHERE AuthorizationId = 'auth-apagar';");
+                await context.Database.ExecuteSqlRawAsync("UPDATE AuthorizationCatalogs SET Id = 'e1c0de00-0000-0000-0000-000000000001' WHERE Id = 'auth-encender';");
+                await context.Database.ExecuteSqlRawAsync("UPDATE AuthorizationCatalogs SET Id = 'e1c0de00-0000-0000-0000-000000000002' WHERE Id = 'auth-apagar';");
+                await context.Database.ExecuteSqlRawAsync("PRAGMA foreign_keys = ON;");
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"⚠ Warning cleaning legacy Guid values: {ex.Message}");
+            }
+
             var roleManager = serviceProvider.GetRequiredService<RoleManager<ApplicationRole>>();
             var userManager = serviceProvider.GetRequiredService<UserManager<ApplicationUser>>();
 
@@ -148,10 +163,10 @@ namespace QMSFlowDoc.Infrastructure.Seed
                             ("CompetencyEvaluations", "INSERT OR IGNORE INTO CompetencyEvaluations (Id, StaffId, CompetencyId, TemplateId, EvaluationDate, EvaluatorStaffId, Outcome, ValidUntil, NextDueDate, Findings, CorrectiveActions, EvidenceDocId, Status, AnnulReason, CreatedAt) SELECT Id, StaffId, CompetencyId, NULL, EvaluationDate, '00000000-0000-0000-0000-000000000000', Outcome, ValidUntil, NULL, Evidence, NULL, NULL, 'Approved', NULL, COALESCE(EvaluationDate, CURRENT_TIMESTAMP) FROM legacy.CompetencyEvaluations;"),
                             
                             ("Competencies", "INSERT OR IGNORE INTO Competencies (Id, Code, Name, Description, Category, RequiredFrequencyMonths, CreatedAt, UpdatedAt) SELECT Id, Code, Name, Description, Category, RequiredFrequencyMonths, CreatedAt, UpdatedAt FROM legacy.Competencies;"),
-                            
-                            ("AuthorizationCatalogsLegacySeeding", "INSERT OR IGNORE INTO AuthorizationCatalogs (Id, Code, Name, Description, RoleScope, RequiresCompetency, ValidityMonths, IsActive, CreatedAt) VALUES ('auth-encender', 'AUTH-ENCENDER', 'Autorización para: Encender citometro', 'Migrado de legacy', 'Técnico', 0, 12, 1, '2026-02-11T19:25:41Z'), ('auth-apagar', 'AUTH-APAGAR', 'Autorización para: Apagar citometro', 'Migrado de legacy', 'Técnico', 0, 12, 1, '2026-02-11T19:25:41Z');"),
-                            
-                            ("StaffAuthorizations", "INSERT OR IGNORE INTO StaffAuthorizations (Id, StaffId, AuthorizationId, GrantedByUserId, GrantedAt, ValidFrom, ValidUntil, Status, RevocationReason, EvidenceDocId, CreatedAt, UpdatedAt, RowVersion) SELECT Id, StaffId, CASE WHEN TaskName LIKE '%Encender%' THEN 'auth-encender' ELSE 'auth-apagar' END, GrantedByUserId, GrantedAt, ValidFrom, ValidUntil, Status, NULL, NULL, GrantedAt, GrantedAt, RowVersion FROM legacy.StaffAuthorizations;"),
+                                          
+                            ("AuthorizationCatalogsLegacySeeding", "INSERT OR IGNORE INTO AuthorizationCatalogs (Id, Code, Name, Description, RoleScope, RequiresCompetency, ValidityMonths, IsActive, CreatedAt) VALUES ('e1c0de00-0000-0000-0000-000000000001', 'AUTH-ENCENDER', 'Autorización para: Encender citometro', 'Migrado de legacy', 'Técnico', 0, 12, 1, '2026-02-11T19:25:41Z'), ('e1c0de00-0000-0000-0000-000000000002', 'AUTH-APAGAR', 'Autorización para: Apagar citometro', 'Migrado de legacy', 'Técnico', 0, 12, 1, '2026-02-11T19:25:41Z');"),
+                             
+                            ("StaffAuthorizations", "INSERT OR IGNORE INTO StaffAuthorizations (Id, StaffId, AuthorizationId, GrantedByUserId, GrantedAt, ValidFrom, ValidUntil, Status, RevocationReason, EvidenceDocId, CreatedAt, UpdatedAt, RowVersion) SELECT Id, StaffId, CASE WHEN TaskName LIKE '%Encender%' THEN 'e1c0de00-0000-0000-0000-000000000001' ELSE 'e1c0de00-0000-0000-0000-000000000002' END, GrantedByUserId, GrantedAt, ValidFrom, ValidUntil, Status, NULL, NULL, GrantedAt, GrantedAt, RowVersion FROM legacy.StaffAuthorizations;"),
                             
                             ("Nonconformities", "INSERT OR IGNORE INTO Nonconformities (Id, DetectedAt, DetectedByUserId, Title, Description, Severity, ImpactPatient, Containment, Origin, RootCauseAnalysis, Status, UpdatedAt, RowVersion) SELECT Id, DetectedAt, DetectedByUserId, Title, Description, Severity, ImpactPatient, Containment, Origin, RootCauseAnalysis, Status, UpdatedAt, RowVersion FROM legacy.Incidents;"),
                             

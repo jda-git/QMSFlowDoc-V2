@@ -54,3 +54,21 @@ public record CreateTrainingActivityRequest(
     string? Description,
     bool IsInternal
 );
+
+public record TrainingActivityExtendedDto(
+    Guid Id,
+    string Title,
+    string? Provider,
+    Guid TrainingTypeId,
+    string TrainingTypeName,
+    string Modality,
+    DateTime? StartDate,
+    DateTime? EndDate,
+    decimal Hours,
+    string? Credits,
+    string? Description,
+    bool IsInternal,
+    string? InternalDepartment,
+    string Status,
+    int AssignedStaffCount
+);

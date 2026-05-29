@@ -38,6 +38,7 @@ builder.Services.AddSingleton<QMSFlowDoc.Application.Services.Documents.IPdfWate
 builder.Services.AddScoped<QMSFlowDoc.Application.Services.Folders.IFolderService, QMSFlowDoc.Infrastructure.Services.Folders.FolderService>();
 builder.Services.AddScoped<QMSFlowDoc.Application.Services.Documents.IDocumentService, QMSFlowDoc.Infrastructure.Services.Documents.DocumentService>();
 builder.Services.AddScoped<QMSFlowDoc.Application.Services.Inventory.IInventoryService, QMSFlowDoc.Infrastructure.Services.Inventory.InventoryService>();
+builder.Services.AddScoped<QMSFlowDoc.Application.Services.Staff.IStaffService, QMSFlowDoc.Infrastructure.Services.Staff.StaffService>();
 
 builder.Services.ConfigureApplicationCookie(options => {
     options.LoginPath = "/login";
