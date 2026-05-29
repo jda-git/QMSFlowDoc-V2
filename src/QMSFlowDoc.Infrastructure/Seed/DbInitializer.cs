@@ -1,0 +1,247 @@
+using Microsoft.AspNetCore.Identity;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
+using QMSFlowDoc.Domain.Identity;
+using QMSFlowDoc.Infrastructure.Persistence;
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Threading.Tasks;
+
+namespace QMSFlowDoc.Infrastructure.Seed
+{
+    public static class DbInitializer
+    {
+        public static async Task SeedIdentityAsync(IServiceProvider serviceProvider)
+        {
+            var context = serviceProvider.GetRequiredService<QmsDbContext>();
+            
+            // 1. Apply EF migrations to target database
+            await context.Database.MigrateAsync();
+
+            var roleManager = serviceProvider.GetRequiredService<RoleManager<ApplicationRole>>();
+            var userManager = serviceProvider.GetRequiredService<UserManager<ApplicationUser>>();
+
+            // 2. Seed Default Roles (needed if no legacy DB, or as fallback)
+            string[] roleNames = { "Administrador", "Facultativo", "Técnico" };
+            foreach (var roleName in roleNames)
+            {
+                if (!await roleManager.RoleExistsAsync(roleName))
+                {
+                    await roleManager.CreateAsync(new ApplicationRole(roleName)
+                    {
+                        Description = $"Rol de {roleName}"
+                    });
+                }
+            }
+
+            // 3. Check for automatic legacy database migration
+            const string legacyDbPath = @"C:\Users\josea\Documents\Antigravity\QMSFlowDoc V2\QMS\Base_datos\qmsflowdoc.db";
+            
+            if (File.Exists(legacyDbPath))
+            {
+                int currentUsersCount = await context.Users.CountAsync();
+                
+                // If the new DB only has 0 or 1 user (admin), run migration from the legacy DB
+                if (currentUsersCount <= 1)
+                {
+                    Console.WriteLine("Legacy database found. Initiating automatic migration to clean architecture...");
+                    try
+                    {
+                        // Attach legacy database
+                        await context.Database.ExecuteSqlRawAsync($"ATTACH '{legacyDbPath}' AS legacy;");
+
+                        // 3.1 Migrate Roles
+                        try
+                        {
+                            await context.Database.ExecuteSqlRawAsync(@"
+                                INSERT OR IGNORE INTO Roles (Id, Name, NormalizedName, ConcurrencyStamp, Description)
+                                SELECT Id, RoleName, UPPER(RoleName), 'MIGRATED_CONCURRENCY_STAMP', Description
+                                FROM legacy.Roles;");
+                            Console.WriteLine("✔ Migrated Roles successfully.");
+                        }
+                        catch (Exception ex)
+                        {
+                            Console.WriteLine($"⚠ Warning migrating Roles: {ex.Message}");
+                        }
+
+                        // 3.2 Migrate Users (maintaining BCrypt PasswordHash for MigrationPasswordHasher)
+                        try
+                        {
+                            await context.Database.ExecuteSqlRawAsync(@"
+                                INSERT OR IGNORE INTO Users (
+                                    Id, UserName, NormalizedUserName, Email, NormalizedEmail, EmailConfirmed, 
+                                    PasswordHash, SecurityStamp, ConcurrencyStamp, PhoneNumber, PhoneNumberConfirmed, 
+                                    TwoFactorEnabled, LockoutEnd, LockoutEnabled, AccessFailedCount, FullName, IsActive, CreatedAt
+                                )
+                                SELECT 
+                                    Id, Username, UPPER(Username), Email, UPPER(Email), 1, 
+                                    PasswordHash, 'MIGRATED_SECURITY_STAMP', 'MIGRATED_CONCURRENCY_STAMP', NULL, 0, 
+                                    0, LockedUntil, 1, FailedLoginAttempts, FullName, IsActive, CreatedAt
+                                FROM legacy.Users;");
+                            Console.WriteLine("✔ Migrated Users successfully.");
+                        }
+                        catch (Exception ex)
+                        {
+                            Console.WriteLine($"⚠ Warning migrating Users: {ex.Message}");
+                        }
+
+                        // 3.3 Migrate UserRoles (mapping legacy roles to target roles by name to resolve FK constraints)
+                        try
+                        {
+                            await context.Database.ExecuteSqlRawAsync(@"
+                                INSERT OR IGNORE INTO UserRoles (UserId, RoleId)
+                                SELECT ur.UserId, COALESCE(r_target.Id, ur.RoleId)
+                                FROM legacy.UserRoles ur
+                                LEFT JOIN legacy.Roles r_legacy ON ur.RoleId = r_legacy.Id
+                                LEFT JOIN Roles r_target ON UPPER(r_legacy.RoleName) = r_target.NormalizedName;");
+                            Console.WriteLine("✔ Migrated UserRoles successfully with role mapping.");
+                        }
+                        catch (Exception ex)
+                        {
+                            Console.WriteLine($"⚠ Warning migrating UserRoles: {ex.Message}");
+                        }
+
+                        // 3.4 Migrate all other data tables in dependency order with explicit columns and mappings
+                        var customMigrations = new List<(string Table, string Sql)>
+                        {
+                            ("Folders", "INSERT OR IGNORE INTO Folders (Id, Name, ParentFolderId, CreatedAt) SELECT Id, Name, ParentFolderId, CreatedAt FROM legacy.Folders;"),
+                            
+                            ("DocumentTypes", "INSERT OR IGNORE INTO DocumentTypes (Id, TypeCode, Name, Description) SELECT Id, TypeCode, Name, Description FROM legacy.DocumentTypes;"),
+                            
+                            ("Documents", "INSERT OR IGNORE INTO Documents (Id, DocCode, Title, DocumentTypeId, FolderId, Area, Process, OwnerUserId, Status, ReviewIntervalMonths, NextReviewDue, CreatedAt, UpdatedAt, IsDeleted, RowVersion) SELECT Id, DocCode, Title, DocumentTypeId, FolderId, Area, Process, OwnerUserId, Status, ReviewIntervalMonths, NextReviewDue, CreatedAt, UpdatedAt, COALESCE(IsDeleted, 0), RowVersion FROM legacy.Documents;"),
+                            
+                            ("DocumentVersions", "INSERT OR IGNORE INTO DocumentVersions (Id, DocumentId, VersionMajor, VersionMinor, VersionLabel, ChangeSummary, CreatedByUserId, CreatedAt, EffectiveFrom, Sha256, MimeType, FileName, RelativePath, IsCurrent, RowVersion, ApprovedByUserId, ApprovalDate) SELECT Id, DocumentId, VersionMajor, VersionMinor, VersionLabel, ChangeSummary, CreatedByUserId, CreatedAt, EffectiveFrom, Sha256, MimeType, FileName, LocalFilePath, COALESCE(IsCurrent, 1), RowVersion, NULL, NULL FROM legacy.DocumentVersions;"),
+                            
+                            ("Equipments", "INSERT OR IGNORE INTO Equipments (Id, InternalId, AssetTag, Name, Manufacturer, Model, SerialNumber, SoftwareVersion, FirmwareVersion, Location, Status, InstalledAt, Notes, ReceptionDate, ReceptionCondition, VerificationDate, IsVerified, CalibrationFrequencyMonths, LastCalibration, NextCalibration, ManualPath, IsDeleted, RowVersion) SELECT Id, InternalId, AssetTag, Name, Manufacturer, Model, SerialNumber, SoftwareVersion, FirmwareVersion, Location, Status, InstalledAt, Notes, ReceptionDate, ReceptionCondition, VerificationDate, COALESCE(IsVerified, 0), CalibrationFrequencyMonths, LastCalibration, NextCalibration, ManualPath, COALESCE(IsDeleted, 0), RowVersion FROM legacy.Equipments;"),
+                            
+                            ("MaintenancePlans", "INSERT OR IGNORE INTO MaintenancePlans (Id, EquipmentId, PlanName, FrequencyDays, ChecklistJson, IsActive) SELECT Id, EquipmentId, PlanName, FrequencyDays, ChecklistJson, IsActive FROM legacy.MaintenancePlans;"),
+                            
+                            ("MaintenanceEvents", "INSERT OR IGNORE INTO MaintenanceEvents (Id, EquipmentId, PlanId, PerformedAt, PerformedByUserId, EventType, Outcome, Notes, EvidenceDocId, HasIssues, NextMaintenanceMonth, NextMaintenanceYear, CertificatePath, Cost, IsEfficiencyCheck, RowVersion) SELECT Id, EquipmentId, PlanId, PerformedAt, PerformedByUserId, EventType, Outcome, Notes, NULL, HasIssues, NextMaintenanceMonth, NextMaintenanceYear, CertificatePath, Cost, COALESCE(IsEfficiencyCheck, 0), RowVersion FROM legacy.MaintenanceEvents;"),
+                            
+                            ("EquipmentHistory", "INSERT OR IGNORE INTO EquipmentHistory (Id, EquipmentId, Date, UserId, UserName, ActionType, Description, OldValue, NewValue) SELECT Id, EquipmentId, Date, UserId, UserName, ActionType, Description, OldValue, NewValue FROM legacy.EquipmentHistory;"),
+                            
+                            ("EquipmentDailyQC", "INSERT OR IGNORE INTO EquipmentDailyQC (Id, EquipmentId, LotNumber, IsPass, Notes, PerformedByUserId, PerformedAt) SELECT Id, EquipmentId, LotNumber, IsPass, Notes, PerformedByUserId, PerformedAt FROM legacy.EquipmentDailyQC;"),
+                            
+                            ("StorageLocations", "INSERT OR IGNORE INTO StorageLocations (Id, Name, Description) SELECT Id, Name, Description FROM legacy.StorageLocations;"),
+                            
+                            ("ReagentTypes", "INSERT OR IGNORE INTO ReagentTypes (Id, Name, Description) SELECT Id, Name, Description FROM legacy.ReagentTypes;"),
+                            
+                            ("Suppliers", "INSERT OR IGNORE INTO Suppliers (Id, Name, ContactName, Email, Phone, Address, Notes, Type, QualityStatus, LastEvaluationDate, NextEvaluationDate, CreatedAt, UpdatedAt, IsDeleted, RowVersion) SELECT Id, Name, ContactName, Email, Phone, Address, Notes, Type, QualityStatus, LastEvaluationDate, NextEvaluationDate, CreatedAt, UpdatedAt, 0, RowVersion FROM legacy.Suppliers;"),
+                            
+                            ("Reagents", "INSERT OR IGNORE INTO Reagents (Id, Name, Manufacturer, SupplierId, ManufacturerCode, InternalCode, Fluorescence, ReagentType, Reference, Classification, StorageConditions, DefaultLocationId, OpenShelfLifeDays, Status, MinStock, TargetStock, ReorderQty, CreatedAt, UpdatedAt, IsDeleted, RowVersion) SELECT Id, Name, Manufacturer, SupplierId, ManufacturerCode, InternalCode, Fluorescence, ReagentType, Reference, Classification, StorageConditions, DefaultLocationId, OpenShelfLifeDays, Status, MinStock, TargetStock, ReorderQty, CreatedAt, COALESCE(UpdatedAt, CreatedAt), IsDeleted, RowVersion FROM legacy.Reagents;"),
+                            
+                            ("ReagentLots", "INSERT OR IGNORE INTO ReagentLots (Id, ReagentId, LotNumber, ExpiryDate, ReceivedDate, ReceivedQty, AvailableQty, LocationId, Status, OpenedDate, OpenExpiryDate, PanelId, ReleaseByUserId, ReleaseAt, CreatedAt, RowVersion) SELECT Id, ReagentId, LotNumber, ExpiryDate, ReceivedDate, ReceivedQty, AvailableQty, LocationId, Status, OpenedDate, OpenExpiryDate, PanelId, ReleaseByUserId, NULL, ReceivedDate, RowVersion FROM legacy.ReagentLots;"),
+                            
+                            ("InventoryMovements", "INSERT OR IGNORE INTO InventoryMovements (Id, MovedAt, UserId, ReagentId, ReagentLotId, MovementType, Qty, Reason, ReferenceType, ReferenceId, Notes) SELECT Id, Date, UserId, ReagentId, LotId, COALESCE(Type, 0), Qty, 'Migración de inventario', NULL, NULL, Notes FROM legacy.InventoryMovements;"),
+                            
+                            ("SupplierEvaluations", "INSERT OR IGNORE INTO SupplierEvaluations (Id, SupplierId, EvaluationDate, EvaluatorUserId, EvaluatedPeriod, ScorePlazos, ScoreCalidad, ScoreServicio, ScoreIncidencias, IsApproved, Observations, AttachmentPath, CreatedAt) SELECT Id, SupplierId, EvaluationDate, EvaluatorUserId, EvaluatedPeriod, ScorePlazos, ScoreCalidad, ScoreServicio, ScoreIncidencias, IsApproved, Observations, AttachmentPath, CreatedAt FROM legacy.SupplierEvaluations;"),
+                            
+                            ("TrainingActivities", "INSERT OR IGNORE INTO TrainingActivities (Id, Title, Provider, TrainingTypeId, Modality, StartDate, EndDate, Hours, Credits, Description, IsInternal, InternalDepartment, Status, AnnulReason, CreatedByUserId, CreatedAt, UpdatedAt) SELECT Id, Title, Provider, TrainingTypeId, Modality, StartDate, EndDate, Hours, Credits, Description, IsInternal, InternalDepartment, Status, NULL, CreatedByUserId, CreatedAt, UpdatedAt FROM legacy.TrainingActivities;"),
+                            
+                            ("StaffProfiles", "INSERT OR IGNORE INTO StaffProfiles (Id, UserId, PositionTitle, Department, HiredAt, IsActive, RowVersion) SELECT Id, UserId, Position, Department, HireDate, IsActive, RowVersion FROM legacy.StaffProfiles;"),
+                            
+                            ("StaffTrainings", "INSERT OR IGNORE INTO StaffTrainings (Id, StaffId, TrainingActivityId, ParticipationRole, Result, Score, CompletionDate, CertificateDocId, Notes, Status, AnnulReason, CreatedAt) SELECT Id, StaffId, TrainingActivityId, 'Participante', Result, Score, CompletionDate, CertificatePath, Notes, Status, NULL, COALESCE(CompletionDate, CompletedAt, CURRENT_TIMESTAMP) FROM legacy.StaffTrainings;"),
+                            
+                            ("CompetencyCatalogsSeeding", "INSERT OR IGNORE INTO CompetencyCatalogs (Id, Code, Name, Description, RoleScope, Area, SubArea, DefaultReassessmentMonths, IsActive, CreatedAt, CreatedByUserId) SELECT Id, Code, Name, Description, 'Staff', Category, NULL, COALESCE(RequiredFrequencyMonths, 12), 1, CreatedAt, '00000000-0000-0000-0000-000000000000' FROM legacy.Competencies;"),
+                            
+                            ("CompetencyEvaluations", "INSERT OR IGNORE INTO CompetencyEvaluations (Id, StaffId, CompetencyId, TemplateId, EvaluationDate, EvaluatorStaffId, Outcome, ValidUntil, NextDueDate, Findings, CorrectiveActions, EvidenceDocId, Status, AnnulReason, CreatedAt) SELECT Id, StaffId, CompetencyId, NULL, EvaluationDate, '00000000-0000-0000-0000-000000000000', Outcome, ValidUntil, NULL, Evidence, NULL, NULL, 'Approved', NULL, COALESCE(EvaluationDate, CURRENT_TIMESTAMP) FROM legacy.CompetencyEvaluations;"),
+                            
+                            ("Competencies", "INSERT OR IGNORE INTO Competencies (Id, Code, Name, Description, Category, RequiredFrequencyMonths, CreatedAt, UpdatedAt) SELECT Id, Code, Name, Description, Category, RequiredFrequencyMonths, CreatedAt, UpdatedAt FROM legacy.Competencies;"),
+                            
+                            ("AuthorizationCatalogsLegacySeeding", "INSERT OR IGNORE INTO AuthorizationCatalogs (Id, Code, Name, Description, RoleScope, RequiresCompetency, ValidityMonths, IsActive, CreatedAt) VALUES ('auth-encender', 'AUTH-ENCENDER', 'Autorización para: Encender citometro', 'Migrado de legacy', 'Técnico', 0, 12, 1, '2026-02-11T19:25:41Z'), ('auth-apagar', 'AUTH-APAGAR', 'Autorización para: Apagar citometro', 'Migrado de legacy', 'Técnico', 0, 12, 1, '2026-02-11T19:25:41Z');"),
+                            
+                            ("StaffAuthorizations", "INSERT OR IGNORE INTO StaffAuthorizations (Id, StaffId, AuthorizationId, GrantedByUserId, GrantedAt, ValidFrom, ValidUntil, Status, RevocationReason, EvidenceDocId, CreatedAt, UpdatedAt, RowVersion) SELECT Id, StaffId, CASE WHEN TaskName LIKE '%Encender%' THEN 'auth-encender' ELSE 'auth-apagar' END, GrantedByUserId, GrantedAt, ValidFrom, ValidUntil, Status, NULL, NULL, GrantedAt, GrantedAt, RowVersion FROM legacy.StaffAuthorizations;"),
+                            
+                            ("Nonconformities", "INSERT OR IGNORE INTO Nonconformities (Id, DetectedAt, DetectedByUserId, Title, Description, Severity, ImpactPatient, Containment, Origin, RootCauseAnalysis, Status, UpdatedAt, RowVersion) SELECT Id, DetectedAt, DetectedByUserId, Title, Description, Severity, ImpactPatient, Containment, Origin, RootCauseAnalysis, Status, UpdatedAt, RowVersion FROM legacy.Incidents;"),
+                            
+                            ("CapaActions", "INSERT OR IGNORE INTO CapaActions (Id, NCId, ActionType, Description, OwnerUserId, DueDate, CompletedAt, EffectivenessCheck, Status) SELECT Id, NCId, ActionType, Description, OwnerUserId, DueDate, CompletedAt, EffectivenessCheck, Status FROM legacy.IncidentActions;"),
+                            
+                            ("Complaints", "INSERT OR IGNORE INTO Complaints (Id, Date, Source, Description, Category, ClaimantType, IsSubstantiated, ReceiptDate, ReceiptMethod, ClinicalImpact, RelatedNCId, ResolutionEvidence, EffectivenessDate, EffectivenessVerifiedBy, EffectivenessNotes, InvestigationResult, CorrectiveAction, Status, ClosedAt, RowVersion) SELECT Id, Date, Source, Description, Category, ClaimantType, IsSubstantiated, ReceiptDate, ReceiptMethod, ClinicalImpact, RelatedNCId, ResolutionEvidence, EffectivenessDate, EffectivenessVerifiedBy, EffectivenessNotes, InvestigationResult, CorrectiveAction, Status, ClosedAt, RowVersion FROM legacy.Complaints;"),
+                            
+                            ("ComplaintActions", "INSERT OR IGNORE INTO ComplaintActions (Id, ComplaintId, ActionType, Description, OwnerUserId, DueDate, CompletedDate, Status) SELECT Id, ComplaintId, ActionType, Description, OwnerUserId, DueDate, CompletedDate, Status FROM legacy.ComplaintActions;"),
+                            
+                            ("Risks", "INSERT OR IGNORE INTO Risks (Id, Title, Description, Category, Likelihood, Impact, MitigationPlan, OwnerUserId, OwnerName, Status, CreatedAt, UpdatedAt, RowVersion) SELECT Id, Title, Description, Category, Likelihood, Impact, MitigationPlan, OwnerUserId, OwnerName, Status, CreatedAt, UpdatedAt, RowVersion FROM legacy.Risks;"),
+                            
+                            ("AuditPlans", "INSERT OR IGNORE INTO AuditPlans (Id, Title, ScheduledDate, Scope, LeadAuditor, Status, SummaryReport, ReportDocumentId, ChecklistJson, RowVersion) SELECT Id, Title, ScheduledDate, Scope, LeadAuditor, Status, SummaryReport, CASE WHEN ReportDocumentId IN (SELECT Id FROM Documents) THEN ReportDocumentId ELSE NULL END, ChecklistJson, RowVersion FROM legacy.AuditPlans;"),
+                            
+                            ("AuditFindings", "INSERT OR IGNORE INTO AuditFindings (Id, AuditPlanId, Description, IsoRequirement, Type, RelatedNCId) SELECT Id, AuditPlanId, Description, IsoRequirement, Type, RelatedNCId FROM legacy.AuditFindings;"),
+                            
+                            ("ManagementReviews", "INSERT OR IGNORE INTO ManagementReviews (Id, ReviewDate, Participants, Agenda, Summary, Actions, MinutesDocumentId) SELECT Id, ReviewDate, Participants, Agenda, Summary, Actions, CASE WHEN MinutesDocumentId IN (SELECT Id FROM Documents) THEN MinutesDocumentId ELSE NULL END FROM legacy.ManagementReviews;"),
+                            
+                            ("IQCResults", "INSERT OR IGNORE INTO IQCResults (Id, EquipmentName, AnalyteName, Level, Value, Mean, SD, Date, Status, WestgardRule, Comments) SELECT Id, EquipmentName, AnalyteName, Level, Value, Mean, SD, Date, Status, WestgardRule, Comments FROM legacy.IQCResults;"),
+                            
+                            ("ContingencyPlans", "INSERT OR IGNORE INTO ContingencyPlans (Id, Title, TriggerEvent, ProcedureSteps, ResponsiblePerson, LastReviewDate, Status) SELECT Id, Title, TriggerEvent, ProcedureSteps, ResponsiblePerson, LastReviewDate, Status FROM legacy.ContingencyPlans;"),
+                            
+                            ("EQAPrograms", "INSERT OR IGNORE INTO EQAPrograms (Id, Name, Provider, CycleFrequency, Status, Notes) SELECT Id, Name, Provider, CycleFrequency, Status, Notes FROM legacy.EQAPrograms;"),
+                            
+                            ("EQAResults", "INSERT OR IGNORE INTO EQAResults (Id, ProgramId, CycleIdentifier, ReceiptDate, ProcessingDate, SubmissionDate, Status, Score, Performance, Notes, EvidenceDocId, ReviewerUserId, ReviewDate) SELECT Id, ProgramId, CycleIdentifier, ReceiptDate, ProcessingDate, SubmissionDate, Status, Score, Performance, Notes, EvidenceDocId, ReviewerUserId, ReviewDate FROM legacy.EQAResults;"),
+                            
+                            ("Methods", "INSERT OR IGNORE INTO Methods (Id, Code, Name, Category, Status, CurrentVersion, EffectiveDate, DocumentId, Notes, CreatedAt, UpdatedAt, RowVersion) SELECT Id, Code, Name, Category, Status, CurrentVersion, EffectiveDate, DocumentId, Notes, CreatedAt, UpdatedAt, RowVersion FROM legacy.Methods;"),
+                            
+                            ("MethodVersions", "INSERT OR IGNORE INTO MethodVersions (Id, MethodId, Version, Status, ChangeDescription, DocumentPath, CreatedBy, CreatedAt, ApprovedBy, ApprovedAt) SELECT Id, MethodId, Version, Status, ChangeDescription, DocumentPath, CreatedBy, CreatedAt, ApprovedBy, ApprovedAt FROM legacy.MethodVersions;"),
+                            
+                            ("MethodValidations", "INSERT OR IGNORE INTO MethodValidations (Id, MethodVersionId, Parameter, Result, ExperimentCount, ReportPath, Notes) SELECT Id, MethodVersionId, Parameter, Result, ExperimentCount, ReportPath, Notes FROM legacy.MethodValidations;"),
+                            
+                            ("MethodAuthorizations", "INSERT OR IGNORE INTO MethodAuthorizations (Id, MethodId, UserId, UserName, AuthorizedAt, ExpiresAt, AuthorizedByUserId, AuthorizedByName) SELECT Id, MethodId, UserId, NULL, AuthorizedAt, ExpiresAt, AuthorizedByUserId, NULL FROM legacy.MethodAuthorizations;"),
+                            
+                            ("MethodReagents", "INSERT OR IGNORE INTO MethodReagents (Id, MethodId, ReagentId, ReagentName) SELECT Id, MethodId, ReagentId, NULL FROM legacy.MethodReagents;"),
+                            
+                            ("MeasurementUncertainties", "INSERT OR IGNORE INTO MeasurementUncertainties (Id, MethodId, AnalyteName, Value, Unit, CoverageFactor, ConfidenceLevel, EstimatedDate, Notes) SELECT Id, MethodId, AnalyteName, Value, Unit, CoverageFactor, ConfidenceLevel, EstimatedDate, Notes FROM legacy.MeasurementUncertainties;")
+                        };
+
+                        foreach (var migration in customMigrations)
+                        {
+                            try
+                            {
+                                await context.Database.ExecuteSqlRawAsync(migration.Sql);
+                                Console.WriteLine($"✔ Migrated table {migration.Table} successfully.");
+                            }
+                            catch (Exception ex)
+                            {
+                                Console.WriteLine($"⚠ Skipped/Warning migrating table {migration.Table}: {ex.Message}");
+                            }
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        Console.WriteLine($"❌ Error during legacy migration process: {ex.Message}");
+                    }
+                    finally
+                    {
+                        try
+                        {
+                            // Always detach legacy database
+                            await context.Database.ExecuteSqlRawAsync("DETACH legacy;");
+                        }
+                        catch { }
+                    }
+                }
+            }
+
+            // 4. Seed Default Admin User if no users exist in database (fallback)
+            const string adminUser = "admin";
+            const string adminEmail = "admin@qmsflowdoc.com";
+            
+            var existingAdmin = await userManager.FindByNameAsync(adminUser);
+            if (existingAdmin == null && await context.Users.CountAsync() == 0)
+            {
+                var admin = new ApplicationUser
+                {
+                    Id = Guid.NewGuid(),
+                    UserName = adminUser,
+                    Email = adminEmail,
+                    FullName = "Administrador del Sistema",
+                    EmailConfirmed = true,
+                    IsActive = true
+                };
+
+                var createAdminResult = await userManager.CreateAsync(admin, "Admin123!");
+                if (createAdminResult.Succeeded)
+                {
+                    await userManager.AddToRoleAsync(admin, "Administrador");
+                }
+            }
+        }
+    }
+}

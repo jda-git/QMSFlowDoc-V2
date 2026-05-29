@@ -1,0 +1,1233 @@
+@page "/documents"
+@rendermode InteractiveServer
+@using QMSFlowDoc.Application.Services.Documents
+@using QMSFlowDoc.Application.Services.Folders
+@using QMSFlowDoc.Domain.Entities
+@using QMSFlowDoc.Shared.DTOs
+@using Microsoft.AspNetCore.Authorization
+@using System.IO
+@attribute [Authorize]
+@inject IDocumentService DocumentService
+@inject IFolderService FolderService
+@inject IJSRuntime JS
+@inject NavigationManager Nav
+
+<PageTitle>Gestor Documental - QMSFlowDoc</PageTitle>
+
+<div class="documents-container py-4">
+    <!-- Header -->
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h1 class="h3 fw-bold text-dark mb-1"><i class="bi bi-folder2-open text-primary me-2"></i>Gestor Documental</h1>
+            <p class="text-muted mb-0">Control de calidad y cumplimiento ISO 15189 para documentos de laboratorio</p>
+        </div>
+        <div>
+            <button class="btn btn-premium px-4" @onclick="OpenAddDocumentModal">
+                <i class="bi bi-file-earmark-plus me-2"></i> Nuevo Documento
+            </button>
+        </div>
+    </div>
+
+    <!-- Main Content Grid -->
+    <div class="row g-4">
+        <!-- Left Sidebar: Folder Explorer -->
+        <div class="col-lg-3">
+            <div class="card border-0 shadow-sm rounded-4 p-3 bg-white border">
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <h5 class="fw-bold mb-0 text-secondary"><i class="bi bi-folder me-2"></i>Carpetas</h5>
+                    <button class="btn btn-sm btn-outline-primary border-0 rounded-circle" @onclick="OpenAddFolderModal" title="Nueva Carpeta">
+                        <i class="bi bi-folder-plus fs-5"></i>
+                    </button>
+                </div>
+
+                <!-- Folders List -->
+                <div class="list-group list-group-flush folders-list">
+                    <button class="list-group-item list-group-item-action border-0 rounded-3 d-flex justify-content-between align-items-center mb-1 @(selectedFolderId == null ? "active-folder" : "")"
+                            @onclick="() => SelectFolder(null)">
+                        <span><i class="bi bi-grid-fill me-2"></i>Todos los Documentos</span>
+                    </button>
+
+                    @foreach (var node in displayedFolders)
+                    {
+                        var folder = node.Folder;
+                        var depth = node.Depth;
+                        <div class="d-flex align-items-center justify-content-between folder-row mb-1" style="padding-left: @(depth * 14)px;">
+                            <button class="list-group-item list-group-item-action border-0 rounded-3 d-flex align-items-center flex-grow-1 @(selectedFolderId == folder.Id ? "active-folder" : "")"
+                                    @onclick="() => SelectFolder(folder)">
+                                @if (depth > 0)
+                                {
+                                    <i class="bi bi-folder-symlink me-2 text-warning"></i>
+                                }
+                                else
+                                {
+                                    <i class="bi bi-folder2-open me-2 text-warning"></i>
+                                }
+                                <span class="text-truncate">@folder.Name</span>
+                                <span class="badge rounded-pill bg-light text-dark ms-auto font-monospace">@folder.DocumentCount</span>
+                            </button>
+                            @if (isAdmin)
+                            {
+                                <div class="folder-actions pe-2">
+                                    <button class="btn btn-sm btn-link text-muted p-0 me-1" @onclick="() => OpenRenameFolderModal(folder)" @onclick:stopPropagation="true" title="Renombrar"><i class="bi bi-pencil"></i></button>
+                                    <button class="btn btn-sm btn-link text-danger p-0" @onclick="() => DeleteFolder(folder.Id)" @onclick:stopPropagation="true" title="Eliminar"><i class="bi bi-trash"></i></button>
+                                </div>
+                            }
+                        </div>
+                    }
+                </div>
+            </div>
+        </div>
+
+        <!-- Right Main Pane: Documents List -->
+        <div class="col-lg-9">
+            <div class="card border-0 shadow-sm rounded-4 p-4 bg-white border">
+                <!-- Search & Filters Bar -->
+                <div class="row g-3 align-items-center mb-4">
+                    <div class="col-md-6 col-lg-5">
+                        <div class="input-group">
+                            <span class="input-group-text bg-light border-end-0"><i class="bi bi-search text-muted"></i></span>
+                            <input type="text" class="form-control form-control-premium border-start-0 ps-1" 
+                                   placeholder="Buscar por código o título..." 
+                                   @bind="searchTerm" @bind:event="oninput" />
+                        </div>
+                    </div>
+                    <div class="col-md-3 col-lg-3">
+                        <div class="form-check form-switch pt-2">
+                            <input class="form-check-input darker-border-checkbox" type="checkbox" id="showObsolete" @bind="includeObsolete" />
+                            <label class="form-check-label text-secondary small" for="showObsolete">Mostrar Obsoletos</label>
+                        </div>
+                    </div>
+                    <div class="col-md-3 col-lg-4 text-end">
+                        <span class="text-muted small">@FilteredDocuments.Count() documentos encontrados</span>
+                    </div>
+                </div>
+
+                <!-- Documents Table -->
+                <div class="table-responsive">
+                    <table class="table table-hover align-middle mb-0">
+                        <thead class="bg-light border-bottom text-muted small text-uppercase">
+                            <tr>
+                                <th class="ps-3">Código</th>
+                                <th>Título</th>
+                                <th>Tipo</th>
+                                <th>Estado</th>
+                                <th>Versión</th>
+                                <th>Revisión</th>
+                                <th class="text-end pe-3">Acciones</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @if (isLoading)
+                            {
+                                <tr>
+                                    <td colspan="7" class="text-center py-5">
+                                        <div class="spinner-border text-primary spinner-border-sm me-2" role="status"></div>
+                                        <span class="text-muted">Cargando documentos...</span>
+                                    </td>
+                                </tr>
+                            }
+                            else if (!FilteredDocuments.Any())
+                            {
+                                <tr>
+                                    <td colspan="7" class="text-center py-5 text-muted">
+                                        <i class="bi bi-journal-x h2 d-block mb-2"></i> No se encontraron documentos en esta carpeta.
+                                    </td>
+                                </tr>
+                            }
+                            else
+                            {
+                                @foreach (var doc in FilteredDocuments)
+                                {
+                                    <tr class="document-tr @(selectedDocument?.Id == doc.Id ? "table-active" : "")" @onclick="() => SelectDocument(doc.Id)">
+                                        <td class="ps-3 fw-bold text-secondary">@doc.DocCode</td>
+                                        <td class="fw-semibold">@doc.Title</td>
+                                        <td><span class="badge bg-light text-secondary border">@doc.TypeName</span></td>
+                                        <td><span class="badge @GetStatusBadgeClass(doc.Status)">@GetStatusText(doc.Status)</span></td>
+                                        <td class="font-monospace">@(doc.CurrentVersionLabel.StartsWith("v", StringComparison.OrdinalIgnoreCase) ? doc.CurrentVersionLabel : "v" + doc.CurrentVersionLabel)</td>
+                                        <td>
+                                            <span class="badge @(doc.NextReviewDisplay == "VENCIDO" ? "bg-danger text-white" : "bg-light text-dark border")">
+                                                @doc.NextReviewDisplay
+                                            </span>
+                                        </td>
+                                        <td class="text-end pe-3" @onclick:stopPropagation="true">
+                                            <div class="btn-group shadow-sm border rounded bg-white">
+                                                <a href="/api/documents/@(doc.Id)/view" target="_blank" class="btn btn-white btn-sm px-2.5" title="Ver Seguro (Pantalla)">
+                                                    <i class="bi bi-eye-fill text-primary"></i>
+                                                </a>
+                                                <a href="/api/documents/@(doc.Id)/print" target="_blank" class="btn btn-white btn-sm px-2.5" title="Imprimir/Exportar Copia">
+                                                    <i class="bi bi-printer-fill text-secondary"></i>
+                                                </a>
+                                                <button class="btn btn-white btn-sm px-2.5 text-danger" @onclick="() => ConfirmDeleteDocument(doc)" title="Eliminar">
+                                                    <i class="bi bi-trash"></i>
+                                                </button>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                }
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Document Detail Bottom Drawer / Side Drawer -->
+    @if (selectedDocument != null)
+    {
+        <div class="card border-0 shadow-lg rounded-4 p-4 bg-white mt-4 border border-primary border-opacity-25 animate-slide-up">
+            <div class="d-flex justify-content-between align-items-start border-bottom pb-3 mb-3">
+                <div>
+                    <div class="d-flex align-items-center mb-1">
+                        <span class="badge bg-primary me-2">@selectedDocument.DocCode</span>
+                        <span class="badge @GetStatusBadgeClass((DocumentStatus)selectedDocument.Status) me-3">@GetStatusText((DocumentStatus)selectedDocument.Status)</span>
+                        <h4 class="fw-bold text-dark mb-0 d-inline-block">@selectedDocument.Title</h4>
+                    </div>
+                    <div class="text-muted small">
+                        Área: <strong>@(selectedDocument.Area ?? "N/A")</strong> &bull; Proceso: <strong>@(selectedDocument.Process ?? "N/A")</strong> &bull; Tipo: <strong>@(selectedDocument.DocumentType?.Name ?? "General")</strong>
+                    </div>
+                </div>
+                <div class="d-flex gap-2">
+                    @if (selectedDocument.Status == DocumentStatus.DRAFT || selectedDocument.Status == DocumentStatus.REVIEW)
+                    {
+                        <button class="btn btn-success btn-sm fw-bold px-3 py-2" @onclick="() => OpenApproveModal()">
+                            <i class="bi bi-check-circle me-1"></i> Aprobar Documento
+                        </button>
+                    }
+                    <button class="btn btn-outline-primary btn-sm fw-bold px-3 py-2" @onclick="() => OpenAddVersionModal()">
+                        <i class="bi bi-cloud-upload me-1"></i> Nueva Versión
+                    </button>
+                    <button class="btn btn-outline-secondary btn-sm fw-bold px-3 py-2" @onclick="() => OpenEditMetadataModal()">
+                        <i class="bi bi-pencil me-1"></i> Editar Metadatos
+                    </button>
+                    <button class="btn btn-light btn-sm rounded-circle" @onclick="() => selectedDocument = null"><i class="bi bi-x-lg"></i></button>
+                </div>
+            </div>
+
+            <div class="row g-4">
+                <!-- Metadata info -->
+                <div class="col-md-4">
+                    <h6 class="fw-bold text-secondary mb-3"><i class="bi bi-info-circle me-2"></i>Información General</h6>
+                    <div class="bg-light p-3 rounded-3 border">
+                        <div class="mb-2.5">
+                            <span class="text-muted d-block small">Creado</span>
+                            <span class="fw-medium">@selectedDocument.CreatedAt.ToLocalTime().ToString("dd/MM/yyyy HH:mm")</span>
+                        </div>
+                        <div class="mb-2.5">
+                            <span class="text-muted d-block small">Última Actualización</span>
+                            <span class="fw-medium">@selectedDocument.UpdatedAt.ToLocalTime().ToString("dd/MM/yyyy HH:mm")</span>
+                        </div>
+                        <div class="mb-2.5">
+                            <span class="text-muted d-block small">Intervalo de Revisión</span>
+                            <span class="fw-medium">Cada @(selectedDocument.ReviewIntervalMonths ?? 12) meses</span>
+                        </div>
+                        <div>
+                            <span class="text-muted d-block small">Próxima Revisión Due</span>
+                            <span class="fw-medium @(selectedDocument.NextReviewDue < DateTime.UtcNow ? "text-danger fw-bold" : "")">
+                                @(selectedDocument.NextReviewDue?.ToLocalTime().ToString("dd/MM/yyyy") ?? "N/A")
+                            </span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Versions list -->
+                <div class="col-md-8">
+                    <h6 class="fw-bold text-secondary mb-3"><i class="bi bi-clock-history me-2"></i>Historial de Versiones (Acreditación)</h6>
+                    <div class="table-responsive max-height-table">
+                        <table class="table table-sm table-striped align-middle mb-0">
+                            <thead class="bg-light border-bottom text-muted small text-uppercase">
+                                <tr>
+                                    <th>Versión</th>
+                                    <th>Archivo</th>
+                                    <th>Fecha de Subida</th>
+                                    <th>Firma Aprobado Por</th>
+                                    <th>Resumen del Cambio</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @if (selectedDocument.Versions == null || !selectedDocument.Versions.Any())
+                                {
+                                    <tr>
+                                        <td colspan="5" class="text-center py-3 text-muted small">No hay versiones cargadas para este documento.</td>
+                                    </tr>
+                                }
+                                else
+                                {
+                                    @foreach (var ver in selectedDocument.Versions.OrderByDescending(v => v.CreatedAt))
+                                    {
+                                        <tr>
+                                            <td class="fw-bold font-monospace">
+                                                @(ver.VersionLabel.StartsWith("v", StringComparison.OrdinalIgnoreCase) ? ver.VersionLabel : "v" + ver.VersionLabel)
+                                                @if (ver.IsCurrent)
+                                                {
+                                                    <span class="badge bg-success-light text-success ms-1 small">Actual</span>
+                                                }
+                                            </td>
+                                            <td class="text-truncate" style="max-width: 150px;" title="@ver.FileName">@ver.FileName</td>
+                                            <td class="small">@ver.CreatedAt.ToLocalTime().ToString("dd/MM/yyyy HH:mm")</td>
+                                            <td class="small text-secondary">
+                                                @if (ver.ApprovedByUserId.HasValue || (selectedDocument.Status == DocumentStatus.APPROVED && ver.IsCurrent))
+                                                {
+                                                    <span><i class="bi bi-file-earmark-check-fill text-success me-1"></i> Aprobado@(ver.ApprovalDate.HasValue ? $" el {ver.ApprovalDate?.ToLocalTime().ToString("dd/MM/yyyy")}" : "")</span>
+                                                }
+                                                else
+                                                {
+                                                    <span class="text-muted italic">Pendiente de firma</span>
+                                                }
+                                            </td>
+                                            <td class="small text-truncate" style="max-width: 200px;" title="@ver.ChangeSummary">@ver.ChangeSummary</td>
+                                        </tr>
+                                    }
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    }
+</div>
+
+<!-- ==================== MODALES ==================== -->
+
+<!-- Modal: Agregar/Renombrar Carpeta -->
+@if (showFolderModal)
+{
+    <div class="modal fade show d-block" style="background: rgba(0,0,0,0.5)">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content card shadow border-0 rounded-4 w-100">
+                <div class="card-header bg-primary text-white py-3 border-0 rounded-top-4 d-flex justify-content-between">
+                    <h5 class="mb-0 fw-bold"><i class="bi bi-folder-fill me-2"></i>@(editingFolderId.HasValue ? "Renombrar Carpeta" : "Nueva Carpeta")</h5>
+                    <button type="button" class="btn-close btn-close-white" @onclick="() => showFolderModal = false"></button>
+                </div>
+                <div class="card-body p-4">
+                    <div class="mb-3">
+                        <label for="folderName" class="form-label fw-medium text-secondary">Nombre de la carpeta</label>
+                        <input type="text" id="folderName" class="form-control form-control-premium" @bind="folderModalName" placeholder="Ej. Procedimientos Analíticos" />
+                    </div>
+                    <div class="mb-3">
+                        <label for="folderParent" class="form-label fw-medium text-secondary">Carpeta Superior</label>
+                        <select id="folderParent" class="form-select form-control-premium" @bind="folderModalParentId">
+                            <option value="">[Carpeta Raíz]</option>
+                            @foreach (var f in folders.Where(f => !editingFolderId.HasValue || f.Id != editingFolderId.Value))
+                            {
+                                <option value="@f.Id">@f.Name</option>
+                            }
+                        </select>
+                    </div>
+                    @if (!string.IsNullOrEmpty(folderError))
+                    {
+                        <div class="alert alert-danger p-2 small mb-3"><i class="bi bi-exclamation-circle-fill me-1"></i> @folderError</div>
+                    }
+                    <div class="d-flex justify-content-end gap-2 mt-4">
+                        <button class="btn btn-light" @onclick="() => showFolderModal = false">Cancelar</button>
+                        <button class="btn btn-premium px-4" @onclick="SaveFolder">Guardar</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+<!-- Modal: Agregar Documento -->
+@if (showAddDocumentModal)
+{
+    <div class="modal fade show d-block" style="background: rgba(0,0,0,0.5)">
+        <div class="modal-dialog modal-lg modal-dialog-centered">
+            <div class="modal-content card shadow border-0 rounded-4 w-100">
+                <div class="card-header bg-primary text-white py-3 border-0 rounded-top-4 d-flex justify-content-between">
+                    <h5 class="mb-0 fw-bold"><i class="bi bi-file-earmark-plus-fill me-2"></i>Subir Nuevo Documento</h5>
+                    <button type="button" class="btn-close btn-close-white" @onclick="() => showAddDocumentModal = false"></button>
+                </div>
+                <div class="card-body p-4">
+                    <div class="row g-3">
+                        <!-- Code & Title -->
+                        <div class="col-md-4">
+                            <label class="form-label fw-medium text-secondary">Código del Documento *</label>
+                            <input type="text" class="form-control form-control-premium" placeholder="Ej. CMF-PRO-001" @bind="newDocCode" />
+                        </div>
+                        <div class="col-md-8">
+                            <label class="form-label fw-medium text-secondary">Título del Documento *</label>
+                            <input type="text" class="form-control form-control-premium" placeholder="Ej. Procedimiento de Citometría de Flujo" @bind="newDocTitle" />
+                        </div>
+
+                        <!-- Type & Folder -->
+                        <div class="col-md-6">
+                            <label class="form-label fw-medium text-secondary">Tipo de Documento</label>
+                            <select class="form-select form-control-premium" @bind="newDocTypeId">
+                                @foreach (var type in documentTypes)
+                                {
+                                    <option value="@type.Id">@type.Name (@type.TypeCode)</option>
+                                }
+                            </select>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label fw-medium text-secondary">Carpeta Destino</label>
+                            <select class="form-select form-control-premium" @bind="newDocFolderId">
+                                <option value="">[Sin Carpeta - Raíz]</option>
+                                @foreach (var f in folders)
+                                {
+                                    <option value="@f.Id">@f.Name</option>
+                                }
+                            </select>
+                        </div>
+
+                        <!-- Area & Process -->
+                        <div class="col-md-6">
+                            <label class="form-label fw-medium text-secondary">Área Funcional</label>
+                            <input type="text" class="form-control form-control-premium" placeholder="Ej. Hematología / Inmunología" @bind="newDocArea" />
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label fw-medium text-secondary">Proceso Relacionado</label>
+                            <input type="text" class="form-control form-control-premium" placeholder="Ej. Analítico / Preanalítico" @bind="newDocProcess" />
+                        </div>
+
+                        <!-- Review Interval & Initial Version Label -->
+                        <div class="col-md-6">
+                            <label class="form-label fw-medium text-secondary">Intervalo de Revisión (Meses)</label>
+                            <input type="number" class="form-control form-control-premium" @bind="newDocReviewInterval" min="1" max="120" />
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label fw-medium text-secondary">Etiqueta de Versión Inicial</label>
+                            <input type="text" class="form-control form-control-premium" placeholder="Ej. 1.0" @bind="newDocVersionLabel" />
+                        </div>
+
+                        <!-- File upload -->
+                        <div class="col-12">
+                            <label class="form-label fw-medium text-secondary">Archivo PDF del Documento *</label>
+                            <div class="input-group">
+                                <span class="input-group-text"><i class="bi bi-filetype-pdf text-danger"></i></span>
+                                <InputFile class="form-control" OnChange="OnNewDocFileSelected" accept=".pdf" />
+                            </div>
+                            <div class="form-text small">Solo se admiten archivos en formato PDF (.pdf). Máx. 10MB.</div>
+                        </div>
+                    </div>
+
+                    @if (!string.IsNullOrEmpty(addDocError))
+                    {
+                        <div class="alert alert-danger p-2 small mt-3 mb-0"><i class="bi bi-exclamation-circle-fill me-1"></i> @addDocError</div>
+                    }
+
+                    <div class="d-flex justify-content-end gap-2 mt-4">
+                        <button class="btn btn-light" @onclick="() => showAddDocumentModal = false" disabled="@isUploading">Cancelar</button>
+                        <button class="btn btn-premium px-4" @onclick="SaveDocument" disabled="@isUploading">
+                            @if (isUploading)
+                            {
+                                <span class="spinner-border spinner-border-sm me-2"></span><span>Subiendo...</span>
+                            }
+                            else
+                            {
+                                <span>Subir y Guardar</span>
+                            }
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+<!-- Modal: Editar Metadatos -->
+@if (showEditMetadataModal && editingDoc != null)
+{
+    <div class="modal fade show d-block" style="background: rgba(0,0,0,0.5)">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content card shadow border-0 rounded-4 w-100">
+                <div class="card-header bg-primary text-white py-3 border-0 rounded-top-4 d-flex justify-content-between">
+                    <h5 class="mb-0 fw-bold"><i class="bi bi-pencil-square me-2"></i>Editar Metadatos</h5>
+                    <button type="button" class="btn-close btn-close-white" @onclick="() => showEditMetadataModal = false"></button>
+                </div>
+                <div class="card-body p-4">
+                    <div class="row g-3">
+                        <div class="col-12">
+                            <label class="form-label fw-medium text-secondary">Código del Documento *</label>
+                            <input type="text" class="form-control form-control-premium" @bind="editingDoc.DocCode" />
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label fw-medium text-secondary">Título del Documento *</label>
+                            <input type="text" class="form-control form-control-premium" @bind="editingDoc.Title" />
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label fw-medium text-secondary">Tipo</label>
+                            <select class="form-select form-control-premium" @bind="editingDocTypeId">
+                                @foreach (var type in documentTypes)
+                                {
+                                    <option value="@type.Id">@type.Name</option>
+                                }
+                            </select>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label fw-medium text-secondary">Carpeta</label>
+                            <select class="form-select form-control-premium" @bind="editingDocFolderId">
+                                <option value="">[Sin Carpeta - Raíz]</option>
+                                @foreach (var f in folders)
+                                {
+                                    <option value="@f.Id">@f.Name</option>
+                                }
+                            </select>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label fw-medium text-secondary">Área</label>
+                            <input type="text" class="form-control form-control-premium" @bind="editingDoc.Area" />
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label fw-medium text-secondary">Proceso</label>
+                            <input type="text" class="form-control form-control-premium" @bind="editingDoc.Process" />
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label fw-medium text-secondary">Intervalo de Revisión (Meses)</label>
+                            <input type="number" class="form-control form-control-premium" @bind="editingReviewInterval" />
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label fw-medium text-secondary">Estado</label>
+                            <select class="form-select form-control-premium" @bind="editingDocStatus">
+                                @foreach (var s in Enum.GetValues<DocumentStatus>())
+                                {
+                                    <option value="@s">@GetStatusText(s)</option>
+                                }
+                            </select>
+                        </div>
+                    </div>
+
+                    @if (!string.IsNullOrEmpty(editMetadataError))
+                    {
+                        <div class="alert alert-danger p-2 small mt-3 mb-0"><i class="bi bi-exclamation-circle-fill me-1"></i> @editMetadataError</div>
+                    }
+
+                    <div class="d-flex justify-content-end gap-2 mt-4">
+                        <button class="btn btn-light" @onclick="() => showEditMetadataModal = false">Cancelar</button>
+                        <button class="btn btn-premium px-4" @onclick="SaveMetadataChanges">Guardar Cambios</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+<!-- Modal: Cargar Nueva Versión -->
+@if (showAddVersionModal && selectedDocument != null)
+{
+    <div class="modal fade show d-block" style="background: rgba(0,0,0,0.5)">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content card shadow border-0 rounded-4 w-100">
+                <div class="card-header bg-primary text-white py-3 border-0 rounded-top-4 d-flex justify-content-between">
+                    <h5 class="mb-0 fw-bold"><i class="bi bi-cloud-arrow-up-fill me-2"></i>Nueva Versión Documental</h5>
+                    <button type="button" class="btn-close btn-close-white" @onclick="() => showAddVersionModal = false"></button>
+                </div>
+                <div class="card-body p-4">
+                    <div class="mb-3">
+                        <label class="form-label fw-medium text-secondary">Código / Versión Actual</label>
+                        <input type="text" class="form-control bg-light" value="@(selectedDocument.DocCode) (v@(selectedDocument.Versions?.FirstOrDefault(v => v.IsCurrent)?.VersionLabel ?? "1.0"))" readonly />
+                    </div>
+                    <div class="row g-3">
+                        <div class="col-md-12">
+                            <label class="form-label fw-medium text-secondary">Nueva Etiqueta de Versión *</label>
+                            <input type="text" class="form-control form-control-premium" placeholder="Ej. 2.0 o 1.1" @bind="newVersionLabel" />
+                        </div>
+                        <div class="col-md-12">
+                            <label class="form-label fw-medium text-secondary">Resumen del Cambio / Historial *</label>
+                            <textarea class="form-control form-control-premium" rows="3" placeholder="Ej. Corrección de errores en sección de calibración..." @bind="newVersionChangeSummary"></textarea>
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label fw-medium text-secondary">Nuevo Archivo PDF *</label>
+                            <div class="input-group">
+                                <span class="input-group-text"><i class="bi bi-filetype-pdf text-danger"></i></span>
+                                <InputFile class="form-control" OnChange="OnNewVersionFileSelected" accept=".pdf" />
+                            </div>
+                        </div>
+                    </div>
+
+                    @if (!string.IsNullOrEmpty(addVersionError))
+                    {
+                        <div class="alert alert-danger p-2 small mt-3 mb-0"><i class="bi bi-exclamation-circle-fill me-1"></i> @addVersionError</div>
+                    }
+
+                    <div class="d-flex justify-content-end gap-2 mt-4">
+                        <button class="btn btn-light" @onclick="() => showAddVersionModal = false" disabled="@isUploading">Cancelar</button>
+                        <button class="btn btn-premium px-4" @onclick="SaveNewVersion" disabled="@isUploading">
+                            @if (isUploading)
+                            {
+                                <span class="spinner-border spinner-border-sm me-2"></span><span>Subiendo...</span>
+                            }
+                            else
+                            {
+                                <span>Cargar Versión</span>
+                            }
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+<!-- Modal: Aprobar / Firmar Documento (ISO 15189) -->
+@if (showApproveModal && selectedDocument != null)
+{
+    <div class="modal fade show d-block" style="background: rgba(0,0,0,0.5)">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content card shadow border-0 rounded-4 w-100">
+                <div class="card-header bg-success text-white py-3 border-0 rounded-top-4 d-flex justify-content-between">
+                    <h5 class="mb-0 fw-bold"><i class="bi bi-shield-check-fill me-2"></i>Firma y Aprobación de Documento</h5>
+                    <button type="button" class="btn-close btn-close-white" @onclick="() => showApproveModal = false"></button>
+                </div>
+                <div class="card-body p-4">
+                    <div class="alert alert-success-light text-success border border-success border-opacity-25 rounded-3 p-3 mb-4 text-center">
+                        <i class="bi bi-award fs-1"></i>
+                        <h6 class="fw-bold mt-2">Cumplimiento Requisito ISO 15189</h6>
+                        <p class="small mb-0">Esta acción cambiará el estado del documento a <strong>APROBADO</strong>. Se aplicará automáticamente la marca de agua y firma electrónica en el control de vigencia.</p>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label fw-medium text-secondary">Firmante (Usuario Actual)</label>
+                        <input type="text" class="form-control bg-light" value="@currentUsername" readonly />
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="approveComments" class="form-label fw-medium text-secondary">Comentarios de aprobación / Firma *</label>
+                        <textarea id="approveComments" class="form-control form-control-premium" rows="3" placeholder="Ej. Aprobado tras revisión de comité científico." @bind="approveComments"></textarea>
+                    </div>
+
+                    @if (!string.IsNullOrEmpty(approveError))
+                    {
+                        <div class="alert alert-danger p-2 small mb-3"><i class="bi bi-exclamation-circle-fill me-1"></i> @approveError</div>
+                    }
+
+                    <div class="d-flex justify-content-end gap-2 mt-4">
+                        <button class="btn btn-light" @onclick="() => showApproveModal = false">Cancelar</button>
+                        <button class="btn btn-success px-4" @onclick="ApproveDocument">Firmar y Aprobar</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+<style>
+    .folders-list {
+        max-height: 400px;
+        overflow-y: auto;
+    }
+    
+    .folder-row {
+        position: relative;
+    }
+    
+    .folder-actions {
+        display: flex;
+        align-items: center;
+        flex-shrink: 0;
+        margin-left: 8px;
+    }
+
+    .folders-list .list-group-item {
+        color: #334155 !important;
+        background-color: transparent;
+        transition: background-color 0.2s ease, color 0.2s ease;
+    }
+    .folders-list .list-group-item:hover {
+        background-color: #f1f5f9 !important;
+        color: #0f172a !important;
+    }
+    .folders-list .list-group-item.active-folder {
+        background-color: rgba(79, 70, 229, 0.08) !important;
+        color: #4f46e5 !important;
+        font-weight: 600;
+    }
+    
+    .document-tr {
+        cursor: pointer;
+        transition: background-color 0.15s ease;
+    }
+
+    .max-height-table {
+        max-height: 250px;
+        overflow-y: auto;
+        border: 1px solid #dee2e6;
+        border-radius: 8px;
+    }
+
+    .btn-white {
+        background-color: #ffffff;
+        border: 1px solid #dee2e6;
+    }
+    
+    .btn-white:hover {
+        background-color: #f8f9fa;
+    }
+
+    .bg-success-light { background-color: #dcfce7; }
+    .alert-success-light { background-color: #f0fdf4; }
+
+    /* Custom Switch & Checkbox border styling */
+    .darker-border-checkbox {
+        border-color: #cbd5e1 !important;
+    }
+</style>
+
+@code {
+    private bool isAdmin = false;
+    private List<FolderDto> folders = new();
+    private List<DocumentType> documentTypes = new();
+    private List<DocumentDto> allDocuments = new();
+    
+    private Guid? folderModalParentId = null;
+
+    private class FolderNode
+    {
+        public FolderDto Folder { get; set; } = null!;
+        public int Depth { get; set; }
+    }
+
+    private List<FolderNode> displayedFolders = new();
+
+    private void BuildFolderTree(List<FolderDto> allFolders, Guid? parentId, int depth)
+    {
+        var children = allFolders.Where(f => f.ParentFolderId == parentId).OrderBy(f => f.Name).ToList();
+        foreach (var child in children)
+        {
+            displayedFolders.Add(new FolderNode { Folder = child, Depth = depth });
+            BuildFolderTree(allFolders, child.Id, depth + 1);
+        }
+    }
+    
+    private bool isLoading = true;
+    private Guid? selectedFolderId = null;
+    private string searchTerm = string.Empty;
+    private bool includeObsolete = false;
+    
+    private DocumentDto? selectedDoc = null;
+    private Document? selectedDocument = null; // Full entity with versions
+    
+    // Auth context
+    [CascadingParameter]
+    private Task<AuthenticationState>? AuthStateTask { get; set; }
+    private Guid? currentUserId = null;
+    private string currentUsername = "Usuario Web";
+
+    // Filters logic
+    private IEnumerable<DocumentDto> FilteredDocuments => allDocuments
+        .Where(d => selectedFolderId == null || d.FolderId == selectedFolderId)
+        .Where(d => includeObsolete || d.Status != QMSFlowDoc.Shared.Models.DocumentStatus.OBSOLETE)
+        .Where(d => string.IsNullOrEmpty(searchTerm) || 
+                   d.DocCode.Contains(searchTerm, StringComparison.OrdinalIgnoreCase) || 
+                   d.Title.Contains(searchTerm, StringComparison.OrdinalIgnoreCase));
+
+    // Modals visibility toggles
+    private bool showFolderModal = false;
+    private Guid? editingFolderId = null;
+    private string folderModalName = string.Empty;
+    private string folderError = string.Empty;
+
+    private bool showAddDocumentModal = false;
+    private string newDocCode = string.Empty;
+    private string newDocTitle = string.Empty;
+    private Guid? newDocTypeId = null;
+    private Guid? newDocFolderId = null;
+    private string newDocArea = string.Empty;
+    private string newDocProcess = string.Empty;
+    private int newDocReviewInterval = 12;
+    private string newDocVersionLabel = "1.0";
+    private IBrowserFile? newDocFile = null;
+    private string addDocError = string.Empty;
+    private bool isUploading = false;
+
+    private bool showEditMetadataModal = false;
+    private Document? editingDoc = null;
+    private Guid? editingDocTypeId = null;
+    private Guid? editingDocFolderId = null;
+    private int editingReviewInterval = 12;
+    private DocumentStatus editingDocStatus;
+    private string editMetadataError = string.Empty;
+
+    private bool showAddVersionModal = false;
+    private string newVersionLabel = string.Empty;
+    private string newVersionChangeSummary = string.Empty;
+    private IBrowserFile? newVersionFile = null;
+    private string addVersionError = string.Empty;
+
+    private bool showApproveModal = false;
+    private string approveComments = string.Empty;
+    private string approveError = string.Empty;
+
+    protected override async Task OnInitializedAsync()
+    {
+        // Obtain logged in user details
+        if (AuthStateTask != null)
+        {
+            var authState = await AuthStateTask;
+            var user = authState.User;
+            currentUsername = user.Identity?.Name ?? "Usuario Web";
+            var userIdClaim = user.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier);
+            if (userIdClaim != null && Guid.TryParse(userIdClaim.Value, out var uId))
+            {
+                currentUserId = uId;
+            }
+            isAdmin = user.IsInRole("Administrador");
+        }
+
+        await LoadFoldersAsync();
+        await LoadDocumentTypesAsync();
+        await LoadDocumentsAsync();
+    }
+
+    private async Task LoadFoldersAsync()
+    {
+        var allFolders = (await FolderService.GetAllFoldersAsync()).ToList();
+        displayedFolders.Clear();
+        BuildFolderTree(allFolders, null, 0);
+        folders = allFolders;
+    }
+
+    private async Task LoadDocumentTypesAsync()
+    {
+        documentTypes = (await DocumentService.GetDocumentTypesAsync()).ToList();
+        if (documentTypes.Any() && newDocTypeId == null)
+        {
+            newDocTypeId = documentTypes.First().Id;
+        }
+    }
+
+    private async Task LoadDocumentsAsync()
+    {
+        isLoading = true;
+        allDocuments = (await DocumentService.GetDocumentsAsync(true)).ToList(); // Get all to filter in-memory
+        foreach (var doc in allDocuments)
+        {
+            Console.WriteLine($"[DEBUG Documents.razor] DocCode: {doc.DocCode}, Title: {doc.Title}, DtoStatus: {doc.Status}");
+        }
+        isLoading = false;
+    }
+
+    private void SelectFolder(FolderDto? folder)
+    {
+        selectedFolderId = folder?.Id;
+        selectedDoc = null;
+        selectedDocument = null;
+    }
+
+    private async Task SelectDocument(Guid docId)
+    {
+        selectedDocument = await DocumentService.GetDocumentByIdAsync(docId);
+        selectedDoc = allDocuments.FirstOrDefault(d => d.Id == docId);
+    }
+
+    private string GetStatusBadgeClass(QMSFlowDoc.Shared.Models.DocumentStatus status) => status switch
+    {
+        QMSFlowDoc.Shared.Models.DocumentStatus.DRAFT => "bg-warning text-dark border",
+        QMSFlowDoc.Shared.Models.DocumentStatus.REVIEW => "bg-info text-white shadow-sm",
+        QMSFlowDoc.Shared.Models.DocumentStatus.APPROVED => "bg-success text-white shadow-sm",
+        QMSFlowDoc.Shared.Models.DocumentStatus.OBSOLETE => "bg-danger text-white shadow-sm",
+        _ => "bg-secondary text-white"
+    };
+
+    private string GetStatusBadgeClass(DocumentStatus status) => status switch
+    {
+        DocumentStatus.DRAFT => "bg-warning text-dark border",
+        DocumentStatus.REVIEW => "bg-info text-white shadow-sm",
+        DocumentStatus.APPROVED => "bg-success text-white shadow-sm",
+        DocumentStatus.OBSOLETE => "bg-danger text-white shadow-sm",
+        _ => "bg-secondary text-white"
+    };
+
+    private string GetStatusText(QMSFlowDoc.Shared.Models.DocumentStatus status)
+    {
+        Console.WriteLine($"[DEBUG Documents.razor] GetStatusText(Shared.DocumentStatus) called with: {status} ({(int)status})");
+        return status switch
+        {
+            QMSFlowDoc.Shared.Models.DocumentStatus.DRAFT => "Borrador",
+            QMSFlowDoc.Shared.Models.DocumentStatus.REVIEW => "En Revisión",
+            QMSFlowDoc.Shared.Models.DocumentStatus.APPROVED => "Vigente",
+            QMSFlowDoc.Shared.Models.DocumentStatus.OBSOLETE => "Obsoleto",
+            _ => status.ToString()
+        };
+    }
+
+    private string GetStatusText(DocumentStatus status)
+    {
+        Console.WriteLine($"[DEBUG Documents.razor] GetStatusText(Domain.DocumentStatus) called with: {status} ({(int)status})");
+        return status switch
+        {
+            DocumentStatus.DRAFT => "Borrador",
+            DocumentStatus.REVIEW => "En Revisión",
+            DocumentStatus.APPROVED => "Vigente",
+            DocumentStatus.OBSOLETE => "Obsoleto",
+            _ => status.ToString()
+        };
+    }
+
+    // FOLDER CRUD
+    private void OpenAddFolderModal()
+    {
+        editingFolderId = null;
+        folderModalName = string.Empty;
+        folderModalParentId = selectedFolderId;
+        folderError = string.Empty;
+        showFolderModal = true;
+    }
+
+    private void OpenRenameFolderModal(FolderDto folder)
+    {
+        editingFolderId = folder.Id;
+        folderModalName = folder.Name;
+        folderModalParentId = folder.ParentFolderId;
+        folderError = string.Empty;
+        showFolderModal = true;
+    }
+
+    private async Task SaveFolder()
+    {
+        if (string.IsNullOrWhiteSpace(folderModalName))
+        {
+            folderError = "El nombre de la carpeta es requerido.";
+            return;
+        }
+
+        try
+        {
+            bool success;
+            if (editingFolderId.HasValue)
+            {
+                success = await FolderService.RenameFolderAsync(editingFolderId.Value, folderModalName, folderModalParentId);
+            }
+            else
+            {
+                success = await FolderService.CreateFolderAsync(folderModalName, folderModalParentId);
+            }
+
+            if (success)
+            {
+                showFolderModal = false;
+                await LoadFoldersAsync();
+            }
+            else
+            {
+                folderError = "No se pudo guardar la carpeta.";
+            }
+        }
+        catch (Exception ex)
+        {
+            folderError = ex.Message;
+        }
+    }
+
+    private async Task DeleteFolder(Guid id)
+    {
+        if (!isAdmin)
+        {
+            await JS.InvokeVoidAsync("alert", "Error: No tiene permisos de administrador para eliminar carpetas.");
+            return;
+        }
+
+        try
+        {
+            bool success = await FolderService.DeleteFolderAsync(id);
+            if (success)
+            {
+                if (selectedFolderId == id) selectedFolderId = null;
+                await LoadFoldersAsync();
+                await LoadDocumentsAsync();
+            }
+        }
+        catch (Exception ex)
+        {
+            await JS.InvokeVoidAsync("alert", $"Error: {ex.Message}");
+        }
+    }
+
+    // DOCUMENT CRUD
+    private void OpenAddDocumentModal()
+    {
+        newDocCode = string.Empty;
+        newDocTitle = string.Empty;
+        newDocArea = string.Empty;
+        newDocProcess = string.Empty;
+        newDocReviewInterval = 12;
+        newDocVersionLabel = "1.0";
+        newDocFile = null;
+        newDocFolderId = selectedFolderId;
+        addDocError = string.Empty;
+        isUploading = false;
+        showAddDocumentModal = true;
+    }
+
+    private void OnNewDocFileSelected(InputFileChangeEventArgs e)
+    {
+        newDocFile = e.File;
+        addDocError = string.Empty;
+    }
+
+    private async Task SaveDocument()
+    {
+        if (string.IsNullOrWhiteSpace(newDocCode) || string.IsNullOrWhiteSpace(newDocTitle))
+        {
+            addDocError = "El código y el título son obligatorios.";
+            return;
+        }
+
+        if (newDocFile == null)
+        {
+            addDocError = "Debe seleccionar un archivo PDF para el documento.";
+            return;
+        }
+
+        isUploading = true;
+        addDocError = string.Empty;
+
+        try
+        {
+            // 1. Create document entry
+            var request = new CreateDocumentRequest(
+                newDocCode.Trim(),
+                newDocTitle.Trim(),
+                newDocTypeId,
+                newDocFolderId,
+                string.IsNullOrWhiteSpace(newDocArea) ? null : newDocArea.Trim(),
+                string.IsNullOrWhiteSpace(newDocProcess) ? null : newDocProcess.Trim(),
+                newDocReviewInterval,
+                newDocVersionLabel,
+                QMSFlowDoc.Shared.Models.DocumentStatus.DRAFT
+            );
+
+            var createdDoc = await DocumentService.CreateDocumentAsync(request, currentUserId);
+            if (createdDoc != null)
+            {
+                // 2. Upload file bytes
+                using var stream = newDocFile.OpenReadStream(maxAllowedSize: 10 * 1024 * 1024); // 10MB limit
+                using var ms = new MemoryStream();
+                await stream.CopyToAsync(ms);
+                
+                var fileBytes = ms.ToArray();
+                var uploadSuccess = await DocumentService.UploadFileAsync(
+                    createdDoc.Id, 
+                    fileBytes, 
+                    newDocFile.Name, 
+                    newDocFile.ContentType, 
+                    newDocVersionLabel, 
+                    "Archivo de versión inicial", 
+                    currentUserId, 
+                    currentUsername);
+
+                if (uploadSuccess)
+                {
+                    showAddDocumentModal = false;
+                    await LoadDocumentsAsync();
+                    await LoadFoldersAsync(); // Recalculate document counts
+                }
+                else
+                {
+                    addDocError = "Se guardaron los metadatos pero falló la subida del archivo PDF.";
+                }
+            }
+            else
+            {
+                addDocError = "No se pudo crear el documento.";
+            }
+        }
+        catch (Exception ex)
+        {
+            addDocError = ex.Message;
+        }
+        finally
+        {
+            isUploading = false;
+        }
+    }
+
+    private void OpenEditMetadataModal()
+    {
+        if (selectedDocument != null)
+        {
+            editingDoc = new Document
+            {
+                Id = selectedDocument.Id,
+                DocCode = selectedDocument.DocCode,
+                Title = selectedDocument.Title,
+                Area = selectedDocument.Area,
+                Process = selectedDocument.Process
+            };
+            editingDocTypeId = selectedDocument.DocumentTypeId;
+            editingDocFolderId = selectedDocument.FolderId;
+            editingReviewInterval = selectedDocument.ReviewIntervalMonths ?? 12;
+            editingDocStatus = selectedDocument.Status;
+            editMetadataError = string.Empty;
+            showEditMetadataModal = true;
+        }
+    }
+
+    private async Task SaveMetadataChanges()
+    {
+        if (editingDoc == null) return;
+        if (string.IsNullOrWhiteSpace(editingDoc.DocCode) || string.IsNullOrWhiteSpace(editingDoc.Title))
+        {
+            editMetadataError = "El código y el título son obligatorios.";
+            return;
+        }
+
+        try
+        {
+            var request = new CreateDocumentRequest(
+                editingDoc.DocCode.Trim(),
+                editingDoc.Title.Trim(),
+                editingDocTypeId,
+                editingDocFolderId,
+                string.IsNullOrWhiteSpace(editingDoc.Area) ? null : editingDoc.Area.Trim(),
+                string.IsNullOrWhiteSpace(editingDoc.Process) ? null : editingDoc.Process.Trim(),
+                editingReviewInterval,
+                null,
+                (QMSFlowDoc.Shared.Models.DocumentStatus)editingDocStatus
+            );
+
+            var success = await DocumentService.UpdateDocumentAsync(editingDoc.Id, request, currentUserId, currentUsername);
+            if (success)
+            {
+                showEditMetadataModal = false;
+                await LoadDocumentsAsync();
+                await SelectDocument(editingDoc.Id); // Refresh selected document detail view
+                await LoadFoldersAsync(); // Recalculate document counts
+            }
+            else
+            {
+                editMetadataError = "No se pudieron actualizar los metadatos.";
+            }
+        }
+        catch (Exception ex)
+        {
+            editMetadataError = ex.Message;
+        }
+    }
+
+    private async Task ConfirmDeleteDocument(DocumentDto doc)
+    {
+        var confirm = await JS.InvokeAsync<bool>("confirm", $"¿Está seguro de que desea eliminar el documento '{doc.Title}' ({doc.DocCode})?");
+        if (confirm)
+        {
+            var success = await DocumentService.DeleteDocumentAsync(doc.Id, currentUserId, currentUsername);
+            if (success)
+            {
+                if (selectedDocument?.Id == doc.Id)
+                {
+                    selectedDocument = null;
+                    selectedDoc = null;
+                }
+                await LoadDocumentsAsync();
+                await LoadFoldersAsync(); // Recalculate document counts
+            }
+        }
+    }
+
+    // VERSION UPLOAD
+    private void OpenAddVersionModal()
+    {
+        newVersionLabel = string.Empty;
+        newVersionChangeSummary = string.Empty;
+        newVersionFile = null;
+        addVersionError = string.Empty;
+        isUploading = false;
+        showAddVersionModal = true;
+    }
+
+    private void OnNewVersionFileSelected(InputFileChangeEventArgs e)
+    {
+        newVersionFile = e.File;
+        addVersionError = string.Empty;
+    }
+
+    private async Task SaveNewVersion()
+    {
+        if (selectedDocument == null) return;
+        if (string.IsNullOrWhiteSpace(newVersionLabel) || string.IsNullOrWhiteSpace(newVersionChangeSummary))
+        {
+            addVersionError = "La etiqueta de versión y el resumen del cambio son obligatorios.";
+            return;
+        }
+        if (newVersionFile == null)
+        {
+            addVersionError = "Debe cargar un archivo PDF de reemplazo.";
+            return;
+        }
+
+        isUploading = true;
+        addVersionError = string.Empty;
+
+        try
+        {
+            using var stream = newVersionFile.OpenReadStream(maxAllowedSize: 10 * 1024 * 1024); // 10MB limit
+            using var ms = new MemoryStream();
+            await stream.CopyToAsync(ms);
+            
+            var fileBytes = ms.ToArray();
+            var success = await DocumentService.UploadFileAsync(
+                selectedDocument.Id, 
+                fileBytes, 
+                newVersionFile.Name, 
+                newVersionFile.ContentType, 
+                newVersionLabel.Trim(), 
+                newVersionChangeSummary.Trim(), 
+                currentUserId, 
+                currentUsername);
+
+            if (success)
+            {
+                showAddVersionModal = false;
+                await LoadDocumentsAsync();
+                await SelectDocument(selectedDocument.Id); // Refresh selected document detail view
+            }
+            else
+            {
+                addVersionError = "No se pudo cargar la nueva versión.";
+            }
+        }
+        catch (Exception ex)
+        {
+            addVersionError = ex.Message;
+        }
+        finally
+        {
+            isUploading = false;
+        }
+    }
+
+    // APPROVAL WORKFLOW
+    private void OpenApproveModal()
+    {
+        approveComments = string.Empty;
+        approveError = string.Empty;
+        showApproveModal = true;
+    }
+
+    private async Task ApproveDocument()
+    {
+        if (selectedDocument == null) return;
+        if (string.IsNullOrWhiteSpace(approveComments))
+        {
+            approveError = "Debe ingresar comentarios de aprobación para auditar la firma.";
+            return;
+        }
+
+        try
+        {
+            var success = await DocumentService.UpdateStatusAsync(
+                selectedDocument.Id, 
+                DocumentStatus.APPROVED, 
+                approveComments.Trim(), 
+                currentUserId, 
+                currentUsername);
+
+            if (success)
+            {
+                showApproveModal = false;
+                await LoadDocumentsAsync();
+                await SelectDocument(selectedDocument.Id); // Refresh selected document detail view
+            }
+            else
+            {
+                approveError = "No se pudo cambiar el estado de aprobación.";
+            }
+        }
+        catch (Exception ex)
+        {
+            approveError = ex.Message;
+        }
+    }
+}

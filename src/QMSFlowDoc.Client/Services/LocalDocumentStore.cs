@@ -3428,15 +3428,16 @@ public async Task<DashboardDataDto> GetDashboardDataAsync()
         }
     }
 
-    public async Task<bool> RenameFolderAsync(Guid id, string newName)
+    public async Task<bool> RenameFolderAsync(Guid id, string newName, Guid? parentId = null)
     {
         using var connection = new SqliteConnection($"Data Source={_dbPath}");
         await connection.OpenAsync();
         
-        var sql = "UPDATE Folders SET Name = $name WHERE Id = $id";
+        var sql = "UPDATE Folders SET Name = $name, ParentFolderId = $parentId WHERE Id = $id";
         using var cmd = new SqliteCommand(sql, connection);
         cmd.Parameters.AddWithValue("$id", id.ToString());
         cmd.Parameters.AddWithValue("$name", newName);
+        cmd.Parameters.AddWithValue("$parentId", parentId.HasValue ? parentId.Value.ToString() : DBNull.Value);
         
         return await cmd.ExecuteNonQueryAsync() > 0;
     }

@@ -145,3 +145,6 @@ backend/
 frontend/
 shared/
 *.pdf
+
+# Scratch/Temporary folder
+scratch/

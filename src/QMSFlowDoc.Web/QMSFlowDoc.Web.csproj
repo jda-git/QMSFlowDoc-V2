@@ -1,19 +1,26 @@
 <Project Sdk="Microsoft.NET.Sdk.Web">
+
   <PropertyGroup>
-    <TargetFramework>net8.0</TargetFramework>
+    <TargetFramework>net9.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <RootNamespace>QMSFlowDoc.Web</RootNamespace>
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="BCrypt.Net-Next" Version="4.0.3" />
-    <PackageReference Include="Microsoft.EntityFrameworkCore.SqlServer" Version="8.0.11" />
+    <ProjectReference Include="..\QMSFlowDoc.Domain\QMSFlowDoc.Domain.csproj" />
+    <ProjectReference Include="..\QMSFlowDoc.Application\QMSFlowDoc.Application.csproj" />
+    <ProjectReference Include="..\QMSFlowDoc.Infrastructure\QMSFlowDoc.Infrastructure.csproj" />
+    <ProjectReference Include="..\QMSFlowDoc.DocumentStorage\QMSFlowDoc.DocumentStorage.csproj" />
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\QMSFlowDoc.Data\QMSFlowDoc.Data.csproj" />
-    <ProjectReference Include="..\QMSFlowDoc.DocumentStorage\QMSFlowDoc.DocumentStorage.csproj" />
-    <ProjectReference Include="..\QMSFlowDoc.Shared\QMSFlowDoc.Shared.csproj" />
+    <PackageReference Include="Microsoft.AspNetCore.Components.Authorization" Version="9.0.0" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="9.0.0">
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
+    <PackageReference Include="BCrypt.Net-Next" Version="4.0.3" />
   </ItemGroup>
+
 </Project>

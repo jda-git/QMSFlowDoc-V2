@@ -1,0 +1,332 @@
+@page "/"
+@rendermode InteractiveServer
+@using Microsoft.EntityFrameworkCore
+@using QMSFlowDoc.Infrastructure.Persistence
+@using QMSFlowDoc.Domain.Entities
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize]
+@inject QmsDbContext Db
+@implements IDisposable
+
+<PageTitle>Dashboard - QMSFlowDoc</PageTitle>
+
+<div class="dashboard-container py-4">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h1 class="h3 fw-bold text-dark mb-1">Panel de Control de Calidad</h1>
+            <p class="text-muted mb-0">Gestión documental, inventario y requisitos ISO 15189</p>
+        </div>
+        <div class="text-end">
+            <span class="badge bg-light text-dark border p-2 mb-1">
+                <i class="bi bi-clock me-1 text-primary"></i> Actualizado: @lastUpdate.ToString("HH:mm:ss")
+            </span>
+            <div class="text-muted small">Próximo refresco en @refreshSeconds segundos</div>
+        </div>
+    </div>
+
+    <!-- Quick Access Actions -->
+    <div class="row g-3 mb-4">
+        <div class="col-md-6 col-lg-3">
+            <a href="documents" class="card action-card bg-primary text-white text-decoration-none">
+                <div class="card-body p-4">
+                    <div class="d-flex align-items-center">
+                        <div class="action-icon bg-white text-primary rounded-3 p-3 me-3">
+                            <i class="bi bi-file-earmark-text-fill h3 mb-0"></i>
+                        </div>
+                        <div>
+                            <div class="fw-bold fs-5">Subir Documento</div>
+                            <div class="small opacity-75">Borradores y Aprobados</div>
+                        </div>
+                    </div>
+                </div>
+            </a>
+        </div>
+        <div class="col-md-6 col-lg-3">
+            <a href="inventory" class="card action-card bg-success text-white text-decoration-none">
+                <div class="card-body p-4">
+                    <div class="d-flex align-items-center">
+                        <div class="action-icon bg-white text-success rounded-3 p-3 me-3">
+                            <i class="bi bi-box-seam-fill h3 mb-0"></i>
+                        </div>
+                        <div>
+                            <div class="fw-bold fs-5">Ver Inventario</div>
+                            <div class="small opacity-75">Reactivos y Lotes</div>
+                        </div>
+                    </div>
+                </div>
+            </a>
+        </div>
+        <div class="col-md-6 col-lg-3">
+            <a href="quality" class="card action-card bg-danger text-white text-decoration-none">
+                <div class="card-body p-4">
+                    <div class="d-flex align-items-center">
+                        <div class="action-icon bg-white text-danger rounded-3 p-3 me-3">
+                            <i class="bi bi-exclamation-octagon-fill h3 mb-0"></i>
+                        </div>
+                        <div>
+                            <div class="fw-bold fs-5">Registrar NC</div>
+                            <div class="small opacity-75">No Conformidades</div>
+                        </div>
+                    </div>
+                </div>
+            </a>
+        </div>
+        <div class="col-md-6 col-lg-3">
+            <a href="config" class="card action-card bg-secondary text-white text-decoration-none">
+                <div class="card-body p-4">
+                    <div class="d-flex align-items-center">
+                        <div class="action-icon bg-white text-secondary rounded-3 p-3 me-3">
+                            <i class="bi bi-sliders h3 mb-0"></i>
+                        </div>
+                        <div>
+                            <div class="fw-bold fs-5">Configuración</div>
+                            <div class="small opacity-75">Parámetros del Sistema</div>
+                        </div>
+                    </div>
+                </div>
+            </a>
+        </div>
+    </div>
+
+    @if (isLoading)
+    {
+        <div class="text-center py-5 card-premium p-5 mt-4">
+            <div class="spinner-border text-primary" role="status"></div>
+            <p class="mt-2 text-muted mb-0">Cargando métricas del sistema de calidad...</p>
+        </div>
+    }
+    else
+    {
+        <!-- Stats Row -->
+        <div class="row g-4 mb-4">
+            <div class="col-6 col-md-3">
+                <div class="stat-card p-4 rounded-4 shadow-sm bg-white border h-100">
+                    <div class="d-flex justify-content-between align-items-center mb-3">
+                        <div class="stat-icon bg-blue-light text-primary rounded-3 p-2.5">
+                            <i class="bi bi-file-earmark-medical h4 mb-0"></i>
+                        </div>
+                        <span class="badge bg-primary rounded-pill">ISO 15189</span>
+                    </div>
+                    <div class="h2 fw-bold mb-1">@totalDocuments</div>
+                    <div class="text-muted small">Documentos Vigentes</div>
+                </div>
+            </div>
+            <div class="col-6 col-md-3">
+                <div class="stat-card p-4 rounded-4 shadow-sm bg-white border h-100">
+                    <div class="d-flex justify-content-between align-items-center mb-3">
+                        <div class="stat-icon bg-success-light text-success rounded-3 p-2.5">
+                            <i class="bi bi-clipboard2-pulse h4 mb-0"></i>
+                        </div>
+                        <span class="badge bg-success rounded-pill">Reactivos</span>
+                    </div>
+                    <div class="h2 fw-bold mb-1">@activeReagents</div>
+                    <div class="text-muted small">Reactivos Activos</div>
+                </div>
+            </div>
+            <div class="col-6 col-md-3">
+                <div class="stat-card p-4 rounded-4 shadow-sm bg-white border h-100">
+                    <div class="d-flex justify-content-between align-items-center mb-3">
+                        <div class="stat-icon bg-warning-light text-warning rounded-3 p-2.5">
+                            <i class="bi bi-hourglass-split h4 mb-0"></i>
+                        </div>
+                        @if (expiredLots > 0)
+                        {
+                            <span class="badge bg-warning text-dark rounded-pill">Alerta</span>
+                        }
+                        else
+                        {
+                            <span class="badge bg-light text-muted rounded-pill">OK</span>
+                        }
+                    </div>
+                    <div class="h2 fw-bold mb-1 @(expiredLots > 0 ? "text-warning" : "")">@expiredLots</div>
+                    <div class="text-muted small">Lotes Caducados</div>
+                </div>
+            </div>
+            <div class="col-6 col-md-3">
+                <div class="stat-card p-4 rounded-4 shadow-sm bg-white border h-100">
+                    <div class="d-flex justify-content-between align-items-center mb-3">
+                        <div class="stat-icon bg-danger-light text-danger rounded-3 p-2.5">
+                            <i class="bi bi-exclamation-triangle h4 mb-0"></i>
+                        </div>
+                        @if (outOfServiceEquipment > 0)
+                        {
+                            <span class="badge bg-danger rounded-pill">Bloqueado</span>
+                        }
+                        else
+                        {
+                            <span class="badge bg-light text-muted rounded-pill">OK</span>
+                        }
+                    </div>
+                    <div class="h2 fw-bold mb-1 @(outOfServiceEquipment > 0 ? "text-danger" : "")">@outOfServiceEquipment</div>
+                    <div class="text-muted small">Equipos Inactivos / Avería</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="row g-4">
+            <!-- Left Info Section -->
+            <div class="col-lg-8">
+                <div class="card border-0 shadow-sm rounded-4 h-100 border">
+                    <div class="card-header bg-white border-0 py-3 d-flex justify-content-between align-items-center">
+                        <h5 class="card-title fw-bold mb-0">Estado de Acreditación ISO 15189</h5>
+                        <i class="bi bi-award-fill text-warning fs-4"></i>
+                    </div>
+                    <div class="card-body pt-0">
+                        <p class="text-secondary small mb-4">Métricas clave y cumplimiento de directivas de calidad del laboratorio:</p>
+                        
+                        <div class="mb-3">
+                            <div class="d-flex justify-content-between mb-1 small fw-bold">
+                                <span>Control de Revisiones Documentales</span>
+                                <span>100%</span>
+                            </div>
+                            <div class="progress rounded-pill" style="height: 8px;">
+                                <div class="progress-bar bg-primary" role="progressbar" style="width: 100%"></div>
+                            </div>
+                        </div>
+
+                        <div class="mb-3">
+                            <div class="d-flex justify-content-between mb-1 small fw-bold">
+                                <span>Trazabilidad de Reactivos y Lotes</span>
+                                <span>@(activeReagents > 0 ? "100%" : "0%")</span>
+                            </div>
+                            <div class="progress rounded-pill" style="height: 8px;">
+                                <div class="progress-bar bg-success" role="progressbar" style="width: @(activeReagents > 0 ? "100%" : "0%")"></div>
+                            </div>
+                        </div>
+
+                        <div class="mb-4">
+                            <div class="d-flex justify-content-between mb-1 small fw-bold">
+                                <span>Verificación de Equipos Metrológicos</span>
+                                <span>@(outOfServiceEquipment == 0 ? "100%" : "85%")</span>
+                            </div>
+                            <div class="progress rounded-pill" style="height: 8px;">
+                                <div class="progress-bar bg-info" role="progressbar" style="width: @(outOfServiceEquipment == 0 ? "100%" : "85%")"></div>
+                            </div>
+                        </div>
+
+                        <div class="alert alert-info border-0 rounded-3 mb-0 small">
+                            <i class="bi bi-info-circle-fill me-2"></i>
+                            <strong>Nota de Calidad:</strong> La intranet del portal de QMSFlowDoc se ejecuta de forma aislada en el puerto de red seguro 5130. Coexiste de forma transparente con MiniLIS Suite en el mismo servidor de intranet hospitalaria.
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Right Info Section -->
+            <div class="col-lg-4">
+                <div class="card border-0 shadow-sm rounded-4 bg-dark text-white p-4 h-100">
+                    <h5 class="fw-bold mb-3"><i class="bi bi-server me-2"></i>Entorno de Red</h5>
+                    
+                    <div class="d-flex align-items-center mb-4">
+                        <span class="status-dot online me-2"></span>
+                        <span class="small opacity-75">Servidor Web en Puerto 5130</span>
+                    </div>
+
+                    <div class="mb-4 small border-top border-secondary pt-3">
+                        <div class="d-flex justify-content-between mb-2">
+                            <span class="opacity-50">Base de Datos:</span>
+                            <span class="fw-medium text-info">SQLite Local</span>
+                        </div>
+                        <div class="d-flex justify-content-between mb-2">
+                            <span class="opacity-50">ORM:</span>
+                            <span class="fw-medium">EF Core 9.0</span>
+                        </div>
+                        <div class="d-flex justify-content-between">
+                            <span class="opacity-50">Framework:</span>
+                            <span class="fw-medium">Blazor Server</span>
+                        </div>
+                    </div>
+
+                    <button @onclick="LoadMetricsAsync" class="btn btn-outline-light btn-sm w-100 mt-auto py-2">
+                        <i class="bi bi-arrow-clockwise me-1"></i>Actualizar Datos
+                    </button>
+                </div>
+            </div>
+        </div>
+    }
+</div>
+
+<style>
+    .stat-card {
+        transition: transform 0.2s ease-in-out;
+    }
+    .stat-card:hover {
+        transform: translateY(-5px);
+    }
+    .bg-blue-light { background-color: #e0e7ff; }
+    .bg-success-light { background-color: #dcfce7; }
+    .bg-warning-light { background-color: #fef9c3; }
+    .bg-danger-light { background-color: #fee2e2; }
+    
+    .status-dot {
+        height: 10px;
+        width: 10px;
+        background-color: #bbb;
+        border-radius: 50%;
+        display: inline-block;
+    }
+    .status-dot.online { background-color: #10b981; }
+    
+    .action-card {
+        border-radius: 1rem;
+        border: none;
+        transition: transform 0.2s ease;
+    }
+    .action-card:hover {
+        transform: scale(1.02);
+    }
+    .action-icon {
+        box-shadow: 0 4px 10px rgba(0,0,0,0.1);
+    }
+</style>
+
+@code {
+    private bool isLoading = true;
+    private int totalDocuments = 0;
+    private int activeReagents = 0;
+    private int expiredLots = 0;
+    private int outOfServiceEquipment = 0;
+    private DateTime lastUpdate;
+    private int refreshSeconds = 30;
+    private System.Threading.Timer? timer;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadMetricsAsync();
+        
+        timer = new System.Threading.Timer(async _ =>
+        {
+            await InvokeAsync(async () =>
+            {
+                await LoadMetricsAsync();
+                StateHasChanged();
+            });
+        }, null, TimeSpan.FromSeconds(refreshSeconds), TimeSpan.FromSeconds(refreshSeconds));
+    }
+
+    private async Task LoadMetricsAsync()
+    {
+        isLoading = true;
+        try
+        {
+            totalDocuments = await Db.Documents.CountAsync();
+            activeReagents = await Db.Reagents.CountAsync(r => r.Status == ReagentStatus.ACTIVO);
+            expiredLots = await Db.ReagentLots.CountAsync(l => l.ExpiryDate < DateTime.UtcNow && l.Status != LotStatus.CONSUMED);
+            outOfServiceEquipment = await Db.Equipments.CountAsync(e => e.Status == EquipmentStatus.OUT_OF_SERVICE);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error charging dashboard metrics: {ex.Message}");
+        }
+        finally
+        {
+            isLoading = false;
+            lastUpdate = DateTime.Now;
+        }
+    }
+
+    public void Dispose()
+    {
+        timer?.Dispose();
+    }
+}

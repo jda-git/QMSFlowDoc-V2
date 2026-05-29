@@ -107,7 +107,10 @@ public class QmsFlowDocDbContext : DbContext
 
             e.HasMany(u => u.Roles)
              .WithMany()
-             .UsingEntity("UserRoles");
+             .UsingEntity<Dictionary<string, object>>(
+                 "UserRoles",
+                 j => j.HasOne<Role>().WithMany().HasForeignKey("RoleId"),
+                 j => j.HasOne<User>().WithMany().HasForeignKey("UserId"));
         });
 
         modelBuilder.Entity<Role>(e =>
@@ -671,5 +674,30 @@ public class QmsFlowDocDbContext : DbContext
             e.Property(s => s.Key).HasMaxLength(200);
             e.Property(s => s.Value).HasMaxLength(4000);
         });
+
+        if (Database.ProviderName == "Microsoft.EntityFrameworkCore.Sqlite")
+        {
+            foreach (var entityType in modelBuilder.Model.GetEntityTypes())
+            {
+                var rowVersionProp = entityType.FindProperty("RowVersion");
+                if (rowVersionProp != null)
+                {
+                    rowVersionProp.IsConcurrencyToken = false;
+                    rowVersionProp.ValueGenerated = Microsoft.EntityFrameworkCore.Metadata.ValueGenerated.Never;
+                }
+
+                foreach (var property in entityType.GetProperties())
+                {
+                    if (property.ClrType == typeof(Guid))
+                    {
+                        property.SetValueConverter(new Microsoft.EntityFrameworkCore.Storage.ValueConversion.GuidToStringConverter());
+                    }
+                    else if (property.ClrType == typeof(Guid?))
+                    {
+                        property.SetValueConverter(new Microsoft.EntityFrameworkCore.Storage.ValueConversion.GuidToStringConverter());
+                    }
+                }
+            }
+        }
     }
 }

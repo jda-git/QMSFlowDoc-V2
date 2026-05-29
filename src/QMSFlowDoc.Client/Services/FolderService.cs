@@ -12,8 +12,9 @@ namespace QMSFlowDoc.Client.Services;
 public interface IFolderService
 {
     Task<IEnumerable<FolderDto>> GetFoldersAsync(Guid? parentId = null);
+    Task<IEnumerable<FolderDto>> GetAllFoldersAsync();
     Task<bool> CreateFolderAsync(string name, Guid? parentId = null);
-    Task<bool> RenameFolderAsync(Guid id, string newName);
+    Task<bool> RenameFolderAsync(Guid id, string newName, Guid? parentId = null);
     Task<bool> DeleteFolderAsync(Guid id);
 }
 
@@ -56,6 +57,19 @@ public class FolderService : IFolderService
         }
     }
 
+    public async Task<IEnumerable<FolderDto>> GetAllFoldersAsync()
+    {
+        try
+        {
+            return await _httpClient.GetFromJsonAsync<IEnumerable<FolderDto>>("folders/all") ?? new List<FolderDto>();
+        }
+        catch
+        {
+            var store = await GetLocalStoreAsync();
+            return await store.GetFoldersAsync();
+        }
+    }
+
     public async Task<bool> CreateFolderAsync(string name, Guid? parentId = null)
     {
         try
@@ -70,17 +84,19 @@ public class FolderService : IFolderService
         }
     }
 
-    public async Task<bool> RenameFolderAsync(Guid id, string newName)
+    public async Task<bool> RenameFolderAsync(Guid id, string newName, Guid? parentId = null)
     {
         try
         {
-            var response = await _httpClient.PutAsync($"folders/{id}?name={Uri.EscapeDataString(newName)}", null);
+            var url = $"folders/{id}?name={Uri.EscapeDataString(newName)}";
+            if (parentId.HasValue) url += $"&parentId={parentId.Value}";
+            var response = await _httpClient.PutAsync(url, null);
             return response.IsSuccessStatusCode;
         }
         catch
         {
             var store = await GetLocalStoreAsync();
-            return await store.RenameFolderAsync(id, newName);
+            return await store.RenameFolderAsync(id, newName, parentId);
         }
     }
 

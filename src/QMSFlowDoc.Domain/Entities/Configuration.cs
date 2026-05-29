@@ -1,0 +1,17 @@
+using System;
+
+namespace QMSFlowDoc.Domain.Entities;
+
+public class ReagentType
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public string Name { get; set; } = string.Empty;
+    public string? Description { get; set; }
+}
+
+public class SystemSetting
+{
+    public string Key { get; set; } = string.Empty; // PK
+    public string Value { get; set; } = string.Empty;
+    public string? Description { get; set; }
+}
