@@ -19,6 +19,32 @@
 <body>
     <Routes />
     <script src="_framework/blazor.web.js"></script>
+    <script>
+        // Opens a new browser window with the provided HTML content and triggers the print dialog.
+        window.openPrintWindow = function (html) {
+            var win = window.open('', '_blank');
+            if (!win) { alert('Por favor, permita las ventanas emergentes para imprimir.'); return; }
+            win.document.open();
+            win.document.write(html);
+            win.document.close();
+            win.focus();
+            setTimeout(function () { win.print(); }, 400);
+        };
+
+        // Creates a Blob with the given content and MIME type and triggers a file download.
+        // A UTF-8 BOM (\uFEFF) is prepended so Excel opens CSV files with correct encoding.
+        window.downloadFile = function (content, filename, mimeType) {
+            var bom = mimeType.indexOf('csv') >= 0 ? '\uFEFF' : '';
+            var blob = new Blob([bom + content], { type: mimeType + ';charset=utf-8;' });
+            var url = URL.createObjectURL(blob);
+            var a = document.createElement('a');
+            a.href = url;
+            a.download = filename;
+            document.body.appendChild(a);
+            a.click();
+            setTimeout(function () { document.body.removeChild(a); URL.revokeObjectURL(url); }, 100);
+        };
+    </script>
 </body>
 
 </html>

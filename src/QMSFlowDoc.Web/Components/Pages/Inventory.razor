@@ -21,6 +21,39 @@
             <button class="btn btn-outline-secondary px-3" @onclick="OpenMovementsModal">
                 <i class="bi bi-journal-text me-2"></i> Historial de Movimientos
             </button>
+
+            <!-- Print / Download dropdown -->
+            <div class="dropdown">
+                <button class="btn btn-outline-success px-3 dropdown-toggle" type="button"
+                        data-bs-toggle="dropdown" aria-expanded="false">
+                    <i class="bi bi-printer me-2"></i> Imprimir / Exportar
+                </button>
+                <ul class="dropdown-menu dropdown-menu-end shadow-sm">
+                    <li><h6 class="dropdown-header">Listados de Inventario</h6></li>
+                    <li>
+                        <button class="dropdown-item" @onclick='() => OpenPrintExportModal("ALL")'>
+                            <i class="bi bi-boxes me-2 text-success"></i>Listado Completo de Reactivos
+                        </button>
+                    </li>
+                    <li>
+                        <button class="dropdown-item" @onclick='() => OpenPrintExportModal("IN")'>
+                            <i class="bi bi-box-arrow-in-down me-2 text-primary"></i>Listado de Entradas
+                        </button>
+                    </li>
+                    <li>
+                        <button class="dropdown-item" @onclick='() => OpenPrintExportModal("OUT")'>
+                            <i class="bi bi-box-arrow-up me-2 text-danger"></i>Listado de Salidas
+                        </button>
+                    </li>
+                    <li><hr class="dropdown-divider" /></li>
+                    <li>
+                        <button class="dropdown-item" @onclick='() => OpenPrintExportModal("ORDER")'>
+                            <i class="bi bi-cart-plus me-2 text-warning"></i>Listado de Pedidos
+                        </button>
+                    </li>
+                </ul>
+            </div>
+
             <button class="btn btn-premium px-4" @onclick="OpenAddReagentModal">
                 <i class="bi bi-plus-circle me-2"></i> Nuevo Reactivo
             </button>
@@ -352,6 +385,84 @@
         </div>
     }
 </div>
+
+<!-- Modal: Imprimir / Exportar CSV -->
+@if (showPrintExportModal)
+{
+    <div class="modal fade show d-block" style="background: rgba(0,0,0,0.5)" tabindex="-1">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content card shadow border-0 rounded-4">
+                <div class="card-header text-white py-3 border-0 rounded-top-4 d-flex justify-content-between"
+                     style="background: linear-gradient(135deg, #0d6efd 0%, #084298 100%)">
+                    <h5 class="mb-0 fw-bold">
+                        <i class="bi bi-printer me-2"></i>
+                        @(printExportType == "ALL" ? "Listado Completo de Reactivos" :
+                          printExportType == "IN"  ? "Listado de Entradas" :
+                          printExportType == "OUT" ? "Listado de Salidas" :
+                                                    "Listado de Pedidos")
+                    </h5>
+                    <button type="button" class="btn-close btn-close-white" @onclick="() => showPrintExportModal = false"></button>
+                </div>
+                <div class="card-body p-4">
+
+                    @if (printExportType == "IN" || printExportType == "OUT")
+                    {
+                        <div class="alert alert-info py-2 small mb-3">
+                            <i class="bi bi-info-circle me-1"></i>
+                            Seleccione el rango de fechas para filtrar los movimientos de
+                            <strong>@(printExportType == "IN" ? "Entradas" : "Salidas")</strong>.
+                        </div>
+                        <div class="row g-3">
+                            <div class="col-6">
+                                <label class="form-label fw-medium text-secondary small">Fecha de Inicio</label>
+                                <input type="date" class="form-control form-control-premium"
+                                       @bind="printDateFrom" />
+                            </div>
+                            <div class="col-6">
+                                <label class="form-label fw-medium text-secondary small">Fecha de Fin</label>
+                                <input type="date" class="form-control form-control-premium"
+                                       @bind="printDateTo" />
+                            </div>
+                        </div>
+                    }
+                    else if (printExportType == "ALL")
+                    {
+                        <div class="alert alert-success py-2 small mb-3">
+                            <i class="bi bi-boxes me-1"></i>
+                            Se incluirán <strong>todos los reactivos activos</strong> con sus lotes en stock y fechas de caducidad.
+                        </div>
+                    }
+                    else if (printExportType == "ORDER")
+                    {
+                        <div class="alert alert-warning py-2 small mb-3">
+                            <i class="bi bi-cart-plus me-1"></i>
+                            Se incluirán reactivos con <strong>stock ≤ Cantidad de Reorden</strong>.
+                            Las unidades a pedir se calculan como <em>Stock Objetivo − Stock Actual</em>.
+                        </div>
+                    }
+
+                    <div class="d-flex gap-2 justify-content-end mt-4">
+                        <button class="btn btn-light" @onclick="() => showPrintExportModal = false">Cancelar</button>
+                        <button class="btn btn-outline-primary px-4" @onclick="ExecuteDownloadCsv" disabled="@printExportBusy">
+                            @if (printExportBusy)
+                            { <span class="spinner-border spinner-border-sm me-1"></span> }
+                            else
+                            { <i class="bi bi-file-earmark-spreadsheet me-2"></i> }
+                            Descargar CSV
+                        </button>
+                        <button class="btn btn-primary px-4" @onclick="ExecutePrint" disabled="@printExportBusy">
+                            @if (printExportBusy)
+                            { <span class="spinner-border spinner-border-sm me-1"></span> }
+                            else
+                            { <i class="bi bi-printer me-2"></i> }
+                            Imprimir
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+}
 
 <!-- Modal: Registrar / Editar Reactivo -->
 @if (showReagentModal)
@@ -757,6 +868,12 @@
         from { transform: translateY(20px); opacity: 0; }
         to { transform: translateY(0); opacity: 1; }
     }
+
+    /* ===== PRINT STYLES ===== */
+    @@media print {
+        body { background: white !important; }
+        .no-print, nav, .sidebar { display: none !important; }
+    }
 </style>
 
 @code {
@@ -782,6 +899,13 @@
     private bool showRegisterLotModal = false;
     private bool showAdjustStockModal = false;
     private bool showMovementsModal = false;
+
+    // Print / Export modal state
+    private bool showPrintExportModal = false;
+    private string printExportType = "ALL"; // ALL | IN | OUT | ORDER
+    private DateTime printDateFrom = DateTime.Today.AddMonths(-1);
+    private DateTime printDateTo = DateTime.Today;
+    private bool printExportBusy = false;
 
     // Form Models
     private ReagentFormModel reagentModel = new();
@@ -1024,6 +1148,114 @@
         showMovementsModal = true;
     }
 
+    // ─────────────────────────────────────────────────────────────────────────
+    // PRINT / EXPORT LOGIC (delegates to InventoryHelpers.cs)
+    // ─────────────────────────────────────────────────────────────────────────
+
+    private void OpenPrintExportModal(string type)
+    {
+        printExportType = type;
+        printDateFrom = DateTime.Today.AddMonths(-1);
+        printDateTo = DateTime.Today;
+        printExportBusy = false;
+        showPrintExportModal = true;
+    }
+
+    private async Task ExecutePrint()
+    {
+        printExportBusy = true;
+        StateHasChanged();
+        try
+        {
+            var html = await BuildReportHtmlAsync();
+            await InventoryHelpers.PrintAsync(JS, html);
+        }
+        finally { printExportBusy = false; }
+    }
+
+    private async Task ExecuteDownloadCsv()
+    {
+        printExportBusy = true;
+        StateHasChanged();
+        try
+        {
+            var (csv, filename) = await BuildReportCsvAsync();
+            await InventoryHelpers.DownloadCsvAsync(JS, csv, filename);
+        }
+        finally { printExportBusy = false; }
+    }
+
+    private async Task<string> BuildReportHtmlAsync()
+    {
+        switch (printExportType)
+        {
+            case "IN":
+            {
+                var (data, title, sub) = await FetchMovements(outOnly: false);
+                return InventoryHelpers.BuildMovementsHtml(data, title, sub);
+            }
+            case "OUT":
+            {
+                var (data, title, sub) = await FetchMovements(outOnly: true);
+                return InventoryHelpers.BuildMovementsHtml(data, title, sub);
+            }
+            case "ORDER":
+                return InventoryHelpers.BuildOrderListHtml(GetOrderList());
+            default:
+                return InventoryHelpers.BuildFullReagentListHtml(reagentsList);
+        }
+    }
+
+    private async Task<(string csv, string filename)> BuildReportCsvAsync()
+    {
+        switch (printExportType)
+        {
+            case "IN":
+            {
+                var (data, _, _) = await FetchMovements(outOnly: false);
+                return (InventoryHelpers.BuildMovementsCsv(data),
+                        $"entradas_{printDateFrom:yyyyMMdd}_{printDateTo:yyyyMMdd}.csv");
+            }
+            case "OUT":
+            {
+                var (data, _, _) = await FetchMovements(outOnly: true);
+                return (InventoryHelpers.BuildMovementsCsv(data),
+                        $"salidas_{printDateFrom:yyyyMMdd}_{printDateTo:yyyyMMdd}.csv");
+            }
+            case "ORDER":
+                return (InventoryHelpers.BuildOrderListCsv(GetOrderList()),
+                        $"pedidos_{DateTime.Today:yyyyMMdd}.csv");
+            default:
+                return (InventoryHelpers.BuildFullReagentListCsv(reagentsList),
+                        $"reactivos_completo_{DateTime.Today:yyyyMMdd}.csv");
+        }
+    }
+
+    private async Task<(List<InventoryMovementDto> data, string title, string subtitle)> FetchMovements(bool outOnly)
+    {
+        var from = printDateFrom.ToUniversalTime();
+        var to = printDateTo.ToUniversalTime().AddDays(1).AddSeconds(-1);
+        if (outOnly)
+        {
+            var all = await InventoryService.GetMovementsAsync(from, to, null, null);
+            var data = all.Where(m => m.AdjustmentType == "OUT" || m.AdjustmentType == "WASTE").ToList();
+            var sub = $"Del {printDateFrom:dd/MM/yyyy} al {printDateTo:dd/MM/yyyy} — {data.Count} movimientos";
+            return (data, "Listado de Salidas", sub);
+        }
+        else
+        {
+            var data = await InventoryService.GetMovementsAsync(from, to, InventoryMovementType.IN, null);
+            var sub = $"Del {printDateFrom:dd/MM/yyyy} al {printDateTo:dd/MM/yyyy} — {data.Count} movimientos";
+            return (data, "Listado de Entradas", sub);
+        }
+    }
+
+    private List<ReagentListDto> GetOrderList()
+        => reagentsList
+            .Where(r => (int)r.Status == (int)QMSFlowDoc.Shared.Models.ReagentStatus.ACTIVO && r.TotalStock <= r.ReorderQty)
+            .OrderBy(r => r.InternalCode ?? r.Name)
+            .ToList();
+
     // SAVING LOGIC
 
     private async Task SaveReagent()
@@ -1172,7 +1404,8 @@
 
     private async Task ConfirmDeleteReagent(ReagentListDto reagent)
     {
-        bool confirm = await JS.InvokeAsync<bool>("confirm", $"¿Está seguro de que desea eliminar el reactivo '{reagent.Name}'?");
+        var confirmResult = await JS.InvokeAsync<object>("confirm", $"¿Está seguro de que desea eliminar el reactivo '{reagent.Name}'?");
+        bool confirm = confirmResult is System.Text.Json.JsonElement j && j.GetBoolean();
         if (confirm)
         {
             var success = await InventoryService.DeleteReagentAsync(reagent.Id);

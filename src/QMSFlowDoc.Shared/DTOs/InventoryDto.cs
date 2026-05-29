@@ -14,6 +14,7 @@ public class ReagentListDto
     public decimal TotalStock { get; set; }
     public decimal MinStock { get; set; }
     public decimal TargetStock { get; set; }
+    public decimal ReorderQty { get; set; }
     public string? Fluorescence { get; set; }
     public string? InternalCode { get; set; }
     public string? Classification { get; set; }

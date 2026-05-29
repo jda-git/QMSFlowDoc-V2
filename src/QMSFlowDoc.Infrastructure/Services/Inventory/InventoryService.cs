@@ -46,6 +46,7 @@ public class InventoryService : IInventoryService
                 SupplierName = r.Supplier != null ? r.Supplier.Name : null,
                 r.MinStock,
                 r.TargetStock,
+                r.ReorderQty,
                 r.Fluorescence,
                 r.InternalCode,
                 Lots = r.Lots.Select(l => new
@@ -86,6 +87,7 @@ public class InventoryService : IInventoryService
                 TotalStock = totalStock,
                 MinStock = r.MinStock,
                 TargetStock = r.TargetStock,
+                ReorderQty = r.ReorderQty,
                 Fluorescence = r.Fluorescence,
                 InternalCode = r.InternalCode,
                 NearestExpiry = nearestExpiry,
