@@ -120,6 +120,7 @@
                     <option value="all">Todos los Reactivos</option>
                     <option value="active">Activos únicamente</option>
                     <option value="low">Stock bajo el mínimo</option>
+                    <option value="order">Reactivos para pedir</option>
                 </select>
             </div>
             <div class="col-md-2 col-lg-4 text-end">
@@ -984,7 +985,8 @@
                  (r.Manufacturer != null && r.Manufacturer.Contains(searchTerm, StringComparison.OrdinalIgnoreCase)))
                 && (stockFilter == "all" || 
                     (stockFilter == "active" && r.Status == QMSFlowDoc.Shared.Models.ReagentStatus.ACTIVO) || 
-                    (stockFilter == "low" && r.TotalStock <= r.MinStock))
+                    (stockFilter == "low" && r.TotalStock <= r.MinStock) ||
+                    (stockFilter == "order" && r.Status == QMSFlowDoc.Shared.Models.ReagentStatus.ACTIVO && r.TotalStock <= r.ReorderQty && (r.TargetStock - r.TotalStock) > 0))
             );
 
             return currentSortColumn switch
@@ -1252,7 +1254,9 @@
 
     private List<ReagentListDto> GetOrderList()
         => reagentsList
-            .Where(r => (int)r.Status == (int)QMSFlowDoc.Shared.Models.ReagentStatus.ACTIVO && r.TotalStock <= r.ReorderQty)
+            .Where(r => (int)r.Status == (int)QMSFlowDoc.Shared.Models.ReagentStatus.ACTIVO 
+                && r.TotalStock <= r.ReorderQty 
+                && (r.TargetStock - r.TotalStock) > 0)
             .OrderBy(r => r.InternalCode ?? r.Name)
             .ToList();
 
