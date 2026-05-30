@@ -53,7 +53,8 @@ public record CreateAuthorizationCatalogRequest(
     string? Description,
     string RoleScope,
     bool RequiresCompetency,
-    int? ValidityMonths
+    int? ValidityMonths,
+    Guid? RequiredCompetencyId = null
 );
 
 public record StaffExpedienteDto(
@@ -100,7 +101,9 @@ public record AuthorizationCatalogDto(
     string RoleScope,
     bool RequiresCompetency,
     int? ValidityMonths,
-    bool IsActive
+    bool IsActive,
+    Guid? RequiredCompetencyId = null,
+    string? RequiredCompetencyName = null
 );
 
 public record TrainingTypeCatalogDto(Guid Id, string Code, string Name, bool IsActive);

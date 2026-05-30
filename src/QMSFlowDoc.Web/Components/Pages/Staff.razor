@@ -329,6 +329,12 @@
                                     <span class="badge rounded-pill @(auth.RequiresCompetency ? "bg-danger bg-opacity-10 text-danger border border-danger border-opacity-20" : "bg-light text-secondary border")">
                                         @(auth.RequiresCompetency ? "Sí" : "No")
                                     </span>
+                                    @if (auth.RequiresCompetency && !string.IsNullOrEmpty(auth.RequiredCompetencyName))
+                                    {
+                                        <div class="small text-muted mt-1" style="font-size: 0.75rem;">
+                                            <i class="bi bi-shield-check text-success me-1"></i>@auth.RequiredCompetencyName
+                                        </div>
+                                    }
                                 </td>
                                 <td><span class="badge bg-light text-info border">@auth.RoleScope</span></td>
                                 <td class="text-end pe-3">
@@ -859,6 +865,12 @@
                     <button type="button" class="btn-close" @onclick="() => showAuthorizationCatalogModal = false"></button>
                 </div>
                 <div class="card-body p-4">
+                    @if (!string.IsNullOrEmpty(catalogErrorMessage))
+                    {
+                        <div class="alert alert-danger py-2 small mb-3">
+                            <i class="bi bi-exclamation-triangle-fill me-2"></i>@catalogErrorMessage
+                        </div>
+                    }
                     <EditForm Model="authorizationCatalogModel" OnValidSubmit="SaveAuthorizationCatalog">
                         <div class="row g-3">
                             <div class="col-md-6">
@@ -887,6 +899,19 @@
                                     <label class="form-check-label text-muted small" for="authRequiresCompetency">¿Requiere competencia previa aprobada?</label>
                                 </div>
                             </div>
+                            @if (authorizationCatalogModel.RequiresCompetency)
+                            {
+                                <div class="col-12">
+                                    <label class="form-label fw-medium text-secondary small">Competencia Requerida</label>
+                                    <InputSelect class="form-select form-select-premium" @bind-Value="authorizationCatalogModel.RequiredCompetencyId">
+                                        <option value="@Guid.Empty">-- Seleccionar Competencia --</option>
+                                        @foreach (var comp in competencyCatalog)
+                                        {
+                                            <option value="@comp.Id">@comp.Code - @comp.Name</option>
+                                        }
+                                    </InputSelect>
+                                </div>
+                            }
                             <div class="col-12">
                                 <label class="form-label fw-medium text-secondary small">Descripción (opcional)</label>
                                 <InputTextArea class="form-control form-control-premium" @bind-Value="authorizationCatalogModel.Description" placeholder="Describa el alcance de esta autorización..." rows="2" />
@@ -1059,6 +1084,7 @@
 
     private CompetencyCatalogDto? deletingCompetencyCatalog;
     private AuthorizationCatalogDto? deletingAuthorizationCatalog;
+    private string? catalogErrorMessage;
 
     // Form Models
     private StaffModel staffModel = new();
@@ -1394,10 +1420,12 @@
     // Authorization Catalog Handlers
     private void OpenAddAuthorizationCatalogModal()
     {
+        catalogErrorMessage = null;
         authorizationCatalogModel = new AuthorizationCatalogModel
         {
             RoleScope = "AMBOS",
-            RequiresCompetency = false
+            RequiresCompetency = false,
+            RequiredCompetencyId = null
         };
         isEditingAuthorizationCatalog = false;
         showAuthorizationCatalogModal = true;
@@ -1405,6 +1433,7 @@
 
     private void OpenEditAuthorizationCatalogModal(AuthorizationCatalogDto auth)
     {
+        catalogErrorMessage = null;
         authorizationCatalogModel = new AuthorizationCatalogModel
         {
             Id = auth.Id,
@@ -1413,7 +1442,8 @@
             Description = auth.Description,
             RoleScope = auth.RoleScope,
             RequiresCompetency = auth.RequiresCompetency,
-            ValidityMonths = auth.ValidityMonths
+            ValidityMonths = auth.ValidityMonths,
+            RequiredCompetencyId = auth.RequiredCompetencyId
         };
         isEditingAuthorizationCatalog = true;
         showAuthorizationCatalogModal = true;
@@ -1421,13 +1451,23 @@
 
     private async Task SaveAuthorizationCatalog()
     {
+        if (authorizationCatalogModel.RequiresCompetency && 
+            (!authorizationCatalogModel.RequiredCompetencyId.HasValue || authorizationCatalogModel.RequiredCompetencyId.Value == Guid.Empty))
+        {
+            catalogErrorMessage = "Debe vincular una competencia si activa el requisito de competencia previa.";
+            return;
+        }
+
+        catalogErrorMessage = null;
+
         var req = new CreateAuthorizationCatalogRequest(
             authorizationCatalogModel.Code,
             authorizationCatalogModel.Name,
             authorizationCatalogModel.Description,
             authorizationCatalogModel.RoleScope,
             authorizationCatalogModel.RequiresCompetency,
-            authorizationCatalogModel.ValidityMonths
+            authorizationCatalogModel.ValidityMonths,
+            authorizationCatalogModel.RequiresCompetency ? authorizationCatalogModel.RequiredCompetencyId : null
         );
 
         if (isEditingAuthorizationCatalog && authorizationCatalogModel.Id.HasValue)
@@ -1537,5 +1577,6 @@
         public string RoleScope { get; set; } = "AMBOS";
         public bool RequiresCompetency { get; set; }
         public int? ValidityMonths { get; set; }
+        public Guid? RequiredCompetencyId { get; set; }
     }
 }

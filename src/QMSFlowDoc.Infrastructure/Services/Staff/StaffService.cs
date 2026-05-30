@@ -318,9 +318,20 @@ public class StaffService : IStaffService
     public async Task<List<AuthorizationCatalogDto>> GetAuthorizationCatalogAsync()
     {
         return await _context.AuthorizationCatalogs
+            .Include(a => a.RequiredCompetencies)
+                .ThenInclude(rc => rc.Competency)
             .Where(a => a.IsActive)
             .Select(a => new AuthorizationCatalogDto(
-                a.Id, a.Code, a.Name, a.Description, a.RoleScope, a.RequiresCompetency, a.ValidityMonths, a.IsActive
+                a.Id,
+                a.Code,
+                a.Name,
+                a.Description,
+                a.RoleScope,
+                a.RequiresCompetency,
+                a.ValidityMonths,
+                a.IsActive,
+                a.RequiredCompetencies.Select(rc => (Guid?)rc.CompetencyId).FirstOrDefault(),
+                a.RequiredCompetencies.Select(rc => rc.Competency != null ? rc.Competency.Name : null).FirstOrDefault()
             )).ToListAsync();
     }
 
@@ -417,13 +428,25 @@ public class StaffService : IStaffService
         };
 
         _context.AuthorizationCatalogs.Add(auth);
+
+        if (request.RequiresCompetency && request.RequiredCompetencyId.HasValue && request.RequiredCompetencyId.Value != Guid.Empty)
+        {
+            _context.AuthorizationRequiredCompetencies.Add(new AuthorizationRequiredCompetency
+            {
+                AuthorizationId = auth.Id,
+                CompetencyId = request.RequiredCompetencyId.Value
+            });
+        }
+
         await _context.SaveChangesAsync();
         return auth.Id;
     }
 
     public async Task UpdateAuthorizationCatalogAsync(Guid id, CreateAuthorizationCatalogRequest request)
     {
-        var auth = await _context.AuthorizationCatalogs.FirstOrDefaultAsync(a => a.Id == id);
+        var auth = await _context.AuthorizationCatalogs
+            .Include(a => a.RequiredCompetencies)
+            .FirstOrDefaultAsync(a => a.Id == id);
         if (auth == null) return;
 
         auth.Code = request.Code;
@@ -432,6 +455,19 @@ public class StaffService : IStaffService
         auth.RoleScope = request.RoleScope;
         auth.RequiresCompetency = request.RequiresCompetency;
         auth.ValidityMonths = request.ValidityMonths;
+
+        // Clear existing competencies
+        _context.AuthorizationRequiredCompetencies.RemoveRange(auth.RequiredCompetencies);
+        auth.RequiredCompetencies.Clear();
+
+        if (request.RequiresCompetency && request.RequiredCompetencyId.HasValue && request.RequiredCompetencyId.Value != Guid.Empty)
+        {
+            _context.AuthorizationRequiredCompetencies.Add(new AuthorizationRequiredCompetency
+            {
+                AuthorizationId = auth.Id,
+                CompetencyId = request.RequiredCompetencyId.Value
+            });
+        }
 
         await _context.SaveChangesAsync();
     }
