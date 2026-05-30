@@ -233,6 +233,21 @@ namespace QMSFlowDoc.Infrastructure.Seed
                     }
                 }
             }
+            // 3.5 Seed Default Training Types if empty
+            if (await context.TrainingTypeCatalogs.CountAsync() == 0)
+            {
+                var types = new List<QMSFlowDoc.Domain.Entities.TrainingTypeCatalog>
+                {
+                    new() { Id = Guid.NewGuid(), Code = "CURSO", Name = "Curso", IsActive = true },
+                    new() { Id = Guid.NewGuid(), Code = "TALLER", Name = "Taller / Workshop", IsActive = true },
+                    new() { Id = Guid.NewGuid(), Code = "SEMINARIO", Name = "Seminario", IsActive = true },
+                    new() { Id = Guid.NewGuid(), Code = "CONGRESO", Name = "Congreso / Jornada", IsActive = true },
+                    new() { Id = Guid.NewGuid(), Code = "SESION_INTERNA", Name = "Sesión Interna", IsActive = true },
+                    new() { Id = Guid.NewGuid(), Code = "OTRO", Name = "Otro", IsActive = true }
+                };
+                context.TrainingTypeCatalogs.AddRange(types);
+                await context.SaveChangesAsync();
+            }
 
             // 4. Seed Default Admin User if no users exist in database (fallback)
             const string adminUser = "admin";

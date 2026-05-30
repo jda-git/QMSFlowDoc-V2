@@ -871,8 +871,22 @@
 
     private TrainingActivityExtendedDto? selectedActivity;
 
+    [CascadingParameter]
+    private Task<AuthenticationState>? AuthStateTask { get; set; }
+    private Guid? currentUserId = null;
+
     protected override async Task OnInitializedAsync()
     {
+        if (AuthStateTask != null)
+        {
+            var authState = await AuthStateTask;
+            var user = authState.User;
+            var userIdClaim = user.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier);
+            if (userIdClaim != null && Guid.TryParse(userIdClaim.Value, out var uId))
+            {
+                currentUserId = uId;
+            }
+        }
         await LoadData();
     }
 
@@ -1085,7 +1099,7 @@
         if (grantModel.AuthorizationId == Guid.Empty) return;
 
         var auth = authorizationsCatalog.First(a => a.Id == grantModel.AuthorizationId);
-        Guid grantedBy = Guid.Empty; // System admin or current user fallback
+        Guid grantedBy = currentUserId ?? usersLookup.FirstOrDefault()?.Id ?? Guid.Empty;
 
         var req = new GrantAuthorizationRequest(
             grantModel.StaffId,
