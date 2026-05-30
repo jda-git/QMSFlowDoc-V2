@@ -52,7 +52,8 @@ public record CreateTrainingActivityRequest(
     DateTime? EndDate,
     decimal Hours,
     string? Description,
-    bool IsInternal
+    bool IsInternal,
+    Guid? CreatedByUserId = null
 );
 
 public record TrainingActivityExtendedDto(
@@ -70,5 +71,7 @@ public record TrainingActivityExtendedDto(
     bool IsInternal,
     string? InternalDepartment,
     string Status,
-    int AssignedStaffCount
+    int AssignedStaffCount,
+    Guid? CreatedByUserId = null,
+    string? CreatedByUserName = null
 );

@@ -14,6 +14,8 @@ public class AuthorizationCatalog
     public int? ValidityMonths { get; set; }
     public bool IsActive { get; set; } = true;
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+    public Guid CreatedByUserId { get; set; }
+    public string? AssessmentMethod { get; set; }
     
     // Relation with required competencies
     public List<AuthorizationRequiredCompetency> RequiredCompetencies { get; set; } = new();

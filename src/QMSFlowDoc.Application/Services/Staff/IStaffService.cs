@@ -44,7 +44,8 @@ public record CreateCompetencyCatalogRequest(
     string RoleScope,
     string Area,
     string? SubArea,
-    int DefaultReassessmentMonths
+    int DefaultReassessmentMonths,
+    Guid? CreatedByUserId = null
 );
 
 public record CreateAuthorizationCatalogRequest(
@@ -54,7 +55,9 @@ public record CreateAuthorizationCatalogRequest(
     string RoleScope,
     bool RequiresCompetency,
     int? ValidityMonths,
-    Guid? RequiredCompetencyId = null
+    Guid? RequiredCompetencyId = null,
+    Guid? CreatedByUserId = null,
+    string? AssessmentMethod = null
 );
 
 public record StaffExpedienteDto(
@@ -90,7 +93,9 @@ public record CompetencyCatalogDto(
     string Area,
     string? SubArea,
     int DefaultReassessmentMonths,
-    bool IsActive
+    bool IsActive,
+    Guid? CreatedByUserId = null,
+    string? CreatedByUserName = null
 );
 
 public record AuthorizationCatalogDto(
@@ -103,7 +108,10 @@ public record AuthorizationCatalogDto(
     int? ValidityMonths,
     bool IsActive,
     Guid? RequiredCompetencyId = null,
-    string? RequiredCompetencyName = null
+    string? RequiredCompetencyName = null,
+    Guid? CreatedByUserId = null,
+    string? CreatedByUserName = null,
+    string? AssessmentMethod = null
 );
 
 public record TrainingTypeCatalogDto(Guid Id, string Code, string Name, bool IsActive);

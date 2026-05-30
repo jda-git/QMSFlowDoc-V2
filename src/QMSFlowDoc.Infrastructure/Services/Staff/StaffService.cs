@@ -192,26 +192,28 @@ public class StaffService : IStaffService
 
     public async Task<List<TrainingActivityExtendedDto>> GetTrainingActivitiesAsync()
     {
-        return await _context.TrainingActivities
-            .Include(a => a.TrainingType)
-            .Include(a => a.Assignments)
-            .Select(a => new TrainingActivityExtendedDto(
-                a.Id,
-                a.Title,
-                a.Provider,
-                a.TrainingTypeId,
-                a.TrainingType!.Name,
-                a.Modality,
-                a.StartDate,
-                a.EndDate,
-                a.Hours,
-                a.Credits,
-                a.Description,
-                a.IsInternal,
-                a.InternalDepartment,
-                a.Status,
-                a.Assignments.Count(asg => asg.Status == "ACTIVO")
-            )).ToListAsync();
+        return await (from a in _context.TrainingActivities
+                      join u in _context.Users on a.CreatedByUserId equals u.Id into uj
+                      from u in uj.DefaultIfEmpty()
+                      select new TrainingActivityExtendedDto(
+                          a.Id,
+                          a.Title,
+                          a.Provider,
+                          a.TrainingTypeId,
+                          a.TrainingType!.Name,
+                          a.Modality,
+                          a.StartDate,
+                          a.EndDate,
+                          a.Hours,
+                          a.Credits,
+                          a.Description,
+                          a.IsInternal,
+                          a.InternalDepartment,
+                          a.Status,
+                          a.Assignments.Count(asg => asg.Status == "ACTIVO"),
+                          a.CreatedByUserId,
+                          u != null ? u.FullName : "Admin"
+                      )).ToListAsync();
     }
 
     public async Task<Guid> CreateTrainingActivityAsync(CreateTrainingActivityRequest request)
@@ -230,7 +232,8 @@ public class StaffService : IStaffService
             Description = request.Description,
             IsInternal = request.IsInternal,
             InternalDepartment = null,
-            Status = "ACTIVO"
+            Status = "ACTIVO",
+            CreatedByUserId = request.CreatedByUserId ?? Guid.Empty
         };
 
         _context.TrainingActivities.Add(act);
@@ -260,11 +263,23 @@ public class StaffService : IStaffService
 
     public async Task<List<CompetencyCatalogDto>> GetCompetencyCatalogAsync()
     {
-        return await _context.CompetencyCatalogs
-            .Where(c => c.IsActive)
-            .Select(c => new CompetencyCatalogDto(
-                c.Id, c.Code, c.Name, c.Description, c.RoleScope, c.Area, c.SubArea, c.DefaultReassessmentMonths, c.IsActive
-            )).ToListAsync();
+        return await (from c in _context.CompetencyCatalogs
+                      join u in _context.Users on c.CreatedByUserId equals u.Id into uj
+                      from u in uj.DefaultIfEmpty()
+                      where c.IsActive
+                      select new CompetencyCatalogDto(
+                          c.Id,
+                          c.Code,
+                          c.Name,
+                          c.Description,
+                          c.RoleScope,
+                          c.Area,
+                          c.SubArea,
+                          c.DefaultReassessmentMonths,
+                          c.IsActive,
+                          c.CreatedByUserId,
+                          u != null ? u.FullName : "Admin"
+                      )).ToListAsync();
     }
 
     public async Task RecordCompetencyEvaluationAsync(AssessCompetencyRequest request)
@@ -317,22 +332,25 @@ public class StaffService : IStaffService
 
     public async Task<List<AuthorizationCatalogDto>> GetAuthorizationCatalogAsync()
     {
-        return await _context.AuthorizationCatalogs
-            .Include(a => a.RequiredCompetencies)
-                .ThenInclude(rc => rc.Competency)
-            .Where(a => a.IsActive)
-            .Select(a => new AuthorizationCatalogDto(
-                a.Id,
-                a.Code,
-                a.Name,
-                a.Description,
-                a.RoleScope,
-                a.RequiresCompetency,
-                a.ValidityMonths,
-                a.IsActive,
-                a.RequiredCompetencies.Select(rc => (Guid?)rc.CompetencyId).FirstOrDefault(),
-                a.RequiredCompetencies.Select(rc => rc.Competency != null ? rc.Competency.Name : null).FirstOrDefault()
-            )).ToListAsync();
+        return await (from a in _context.AuthorizationCatalogs
+                      join u in _context.Users on a.CreatedByUserId equals u.Id into uj
+                      from u in uj.DefaultIfEmpty()
+                      where a.IsActive
+                      select new AuthorizationCatalogDto(
+                          a.Id,
+                          a.Code,
+                          a.Name,
+                          a.Description,
+                          a.RoleScope,
+                          a.RequiresCompetency,
+                          a.ValidityMonths,
+                          a.IsActive,
+                          a.RequiredCompetencies.Select(rc => (Guid?)rc.CompetencyId).FirstOrDefault(),
+                          a.RequiredCompetencies.Select(rc => rc.Competency != null ? rc.Competency.Name : null).FirstOrDefault(),
+                          a.CreatedByUserId,
+                          u != null ? u.FullName : "Admin",
+                          a.AssessmentMethod
+                      )).ToListAsync();
     }
 
     public async Task GrantAuthorizationAsync(GrantAuthorizationRequest request)
@@ -379,7 +397,7 @@ public class StaffService : IStaffService
             DefaultReassessmentMonths = request.DefaultReassessmentMonths,
             IsActive = true,
             CreatedAt = DateTime.UtcNow,
-            CreatedByUserId = Guid.Empty
+            CreatedByUserId = request.CreatedByUserId ?? Guid.Empty
         };
 
         _context.CompetencyCatalogs.Add(comp);
@@ -399,6 +417,10 @@ public class StaffService : IStaffService
         comp.Area = request.Area;
         comp.SubArea = request.SubArea;
         comp.DefaultReassessmentMonths = request.DefaultReassessmentMonths;
+        if (request.CreatedByUserId.HasValue && request.CreatedByUserId.Value != Guid.Empty)
+        {
+            comp.CreatedByUserId = request.CreatedByUserId.Value;
+        }
 
         await _context.SaveChangesAsync();
     }
@@ -424,7 +446,9 @@ public class StaffService : IStaffService
             RequiresCompetency = request.RequiresCompetency,
             ValidityMonths = request.ValidityMonths,
             IsActive = true,
-            CreatedAt = DateTime.UtcNow
+            CreatedAt = DateTime.UtcNow,
+            CreatedByUserId = request.CreatedByUserId ?? Guid.Empty,
+            AssessmentMethod = request.AssessmentMethod
         };
 
         _context.AuthorizationCatalogs.Add(auth);
@@ -455,6 +479,11 @@ public class StaffService : IStaffService
         auth.RoleScope = request.RoleScope;
         auth.RequiresCompetency = request.RequiresCompetency;
         auth.ValidityMonths = request.ValidityMonths;
+        auth.AssessmentMethod = request.AssessmentMethod;
+        if (request.CreatedByUserId.HasValue && request.CreatedByUserId.Value != Guid.Empty)
+        {
+            auth.CreatedByUserId = request.CreatedByUserId.Value;
+        }
 
         // Clear existing competencies
         _context.AuthorizationRequiredCompetencies.RemoveRange(auth.RequiredCompetencies);

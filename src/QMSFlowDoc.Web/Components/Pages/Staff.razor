@@ -220,6 +220,7 @@
                             <th>Fechas</th>
                             <th>Horas</th>
                             <th>Inscritos</th>
+                            <th>Validado por</th>
                             <th class="text-end pe-3">Acciones</th>
                         </tr>
                     </thead>
@@ -236,6 +237,11 @@
                                 <td>
                                     <span class="badge bg-success bg-opacity-10 text-success border border-success border-opacity-20 px-2 py-1">
                                         <i class="bi bi-people me-1"></i>@act.AssignedStaffCount aptos
+                                    </span>
+                                </td>
+                                <td>
+                                    <span class="badge bg-light text-dark border">
+                                        <i class="bi bi-person-check-fill text-success me-1"></i>@act.CreatedByUserName
                                     </span>
                                 </td>
                                 <td class="text-end pe-3">
@@ -269,6 +275,7 @@
                             <th>Subárea</th>
                             <th>Ámbito de Rol</th>
                             <th>Vigencia (Meses)</th>
+                            <th>Validado por</th>
                             <th class="text-end pe-3">Acciones</th>
                         </tr>
                     </thead>
@@ -282,6 +289,11 @@
                                 <td class="text-muted">@comp.SubArea</td>
                                 <td><span class="badge bg-light text-info border">@comp.RoleScope</span></td>
                                 <td class="text-dark">@comp.DefaultReassessmentMonths meses</td>
+                                <td>
+                                    <span class="badge bg-light text-dark border">
+                                        <i class="bi bi-person-check-fill text-success me-1"></i>@comp.CreatedByUserName
+                                    </span>
+                                </td>
                                 <td class="text-end pe-3">
                                     <button class="btn btn-light btn-sm rounded-3 border px-2.5 me-1" @onclick="() => OpenEditCompetencyCatalogModal(comp)" title="Editar">
                                         <i class="bi bi-pencil-square"></i>
@@ -315,6 +327,7 @@
                             <th>Descripción</th>
                             <th>Requiere Competencia</th>
                             <th>Ámbito de Rol</th>
+                            <th>Valoración Habilidades</th>
                             <th class="text-end pe-3">Acciones</th>
                         </tr>
                     </thead>
@@ -337,6 +350,17 @@
                                     }
                                 </td>
                                 <td><span class="badge bg-light text-info border">@auth.RoleScope</span></td>
+                                <td>
+                                    @if (!string.IsNullOrEmpty(auth.AssessmentMethod))
+                                    {
+                                        <div class="small text-dark fw-medium">
+                                            <i class="bi bi-eye-fill text-primary me-1"></i>@auth.AssessmentMethod
+                                        </div>
+                                    }
+                                    <div class="small text-muted mt-1" style="font-size: 0.75rem;">
+                                        <i class="bi bi-person-check-fill text-success me-1"></i>Validado por: @auth.CreatedByUserName
+                                    </div>
+                                </td>
                                 <td class="text-end pe-3">
                                     <button class="btn btn-light btn-sm rounded-3 border px-2.5 me-1" @onclick="() => OpenEditAuthorizationCatalogModal(auth)" title="Editar">
                                         <i class="bi bi-pencil-square"></i>
@@ -894,6 +918,16 @@
                                 <InputNumber class="form-control form-control-premium" @bind-Value="authorizationCatalogModel.ValidityMonths" min="1" placeholder="Ej. 12" />
                             </div>
                             <div class="col-12">
+                                <label class="form-label fw-medium text-secondary small">Método de Valoración de Habilidades</label>
+                                <InputSelect class="form-select form-select-premium" @bind-Value="authorizationCatalogModel.AssessmentMethod">
+                                    <option value="">-- Seleccionar método de valoración --</option>
+                                    @foreach (var method in assessmentMethodsList)
+                                    {
+                                        <option value="@method">@method</option>
+                                    }
+                                </InputSelect>
+                            </div>
+                            <div class="col-12">
                                 <div class="form-check form-switch pt-2">
                                     <InputCheckbox class="form-check-input" id="authRequiresCompetency" @bind-Value="authorizationCatalogModel.RequiresCompetency" />
                                     <label class="form-check-label text-muted small" for="authRequiresCompetency">¿Requiere competencia previa aprobada?</label>
@@ -1065,6 +1099,14 @@
     private List<TrainingTypeCatalogDto> trainingTypeCatalog = new();
     private List<UserLookupDto> usersLookup = new();
 
+    private readonly List<string> assessmentMethodsList = new()
+    {
+        "observación directa de la actividad",
+        "revisión de los registros de trabajo",
+        "evaluación de la capacidad para resolver problemas",
+        "análisis de muestras ciegas/controles"
+    };
+
     private StaffExpedienteDto? selectedStaffDetail;
 
     // Modals visibility
@@ -1229,7 +1271,8 @@
             trainingModel.EndDate,
             trainingModel.Hours,
             trainingModel.Description,
-            trainingModel.IsInternal
+            trainingModel.IsInternal,
+            currentUserId
         );
 
         await StaffService.CreateTrainingActivityAsync(req);
@@ -1385,7 +1428,8 @@
             competencyCatalogModel.RoleScope,
             competencyCatalogModel.Area,
             competencyCatalogModel.SubArea,
-            competencyCatalogModel.DefaultReassessmentMonths
+            competencyCatalogModel.DefaultReassessmentMonths,
+            currentUserId
         );
 
         if (isEditingCompetencyCatalog && competencyCatalogModel.Id.HasValue)
@@ -1425,7 +1469,8 @@
         {
             RoleScope = "AMBOS",
             RequiresCompetency = false,
-            RequiredCompetencyId = null
+            RequiredCompetencyId = null,
+            AssessmentMethod = ""
         };
         isEditingAuthorizationCatalog = false;
         showAuthorizationCatalogModal = true;
@@ -1443,7 +1488,8 @@
             RoleScope = auth.RoleScope,
             RequiresCompetency = auth.RequiresCompetency,
             ValidityMonths = auth.ValidityMonths,
-            RequiredCompetencyId = auth.RequiredCompetencyId
+            RequiredCompetencyId = auth.RequiredCompetencyId,
+            AssessmentMethod = auth.AssessmentMethod
         };
         isEditingAuthorizationCatalog = true;
         showAuthorizationCatalogModal = true;
@@ -1451,6 +1497,12 @@
 
     private async Task SaveAuthorizationCatalog()
     {
+        if (string.IsNullOrEmpty(authorizationCatalogModel.AssessmentMethod))
+        {
+            catalogErrorMessage = "Debe seleccionar un método de valoración de habilidades.";
+            return;
+        }
+
         if (authorizationCatalogModel.RequiresCompetency && 
             (!authorizationCatalogModel.RequiredCompetencyId.HasValue || authorizationCatalogModel.RequiredCompetencyId.Value == Guid.Empty))
         {
@@ -1467,7 +1519,9 @@
             authorizationCatalogModel.RoleScope,
             authorizationCatalogModel.RequiresCompetency,
             authorizationCatalogModel.ValidityMonths,
-            authorizationCatalogModel.RequiresCompetency ? authorizationCatalogModel.RequiredCompetencyId : null
+            authorizationCatalogModel.RequiresCompetency ? authorizationCatalogModel.RequiredCompetencyId : null,
+            currentUserId,
+            authorizationCatalogModel.AssessmentMethod
         );
 
         if (isEditingAuthorizationCatalog && authorizationCatalogModel.Id.HasValue)
@@ -1578,5 +1632,6 @@
         public bool RequiresCompetency { get; set; }
         public int? ValidityMonths { get; set; }
         public Guid? RequiredCompetencyId { get; set; }
+        public string? AssessmentMethod { get; set; }
     }
 }
