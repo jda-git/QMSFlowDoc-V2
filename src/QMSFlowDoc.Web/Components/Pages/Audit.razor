@@ -1,0 +1,291 @@
+@page "/audit"
+@rendermode InteractiveServer
+@using Microsoft.EntityFrameworkCore
+@using QMSFlowDoc.Domain.Entities
+@using QMSFlowDoc.Infrastructure.Persistence
+@using QMSFlowDoc.Application.Services.Identity
+@using System.Security.Claims
+@using System.Text
+@inject QmsDbContext DbContext
+@inject IPermissionService PermissionService
+@inject IJSRuntime JS
+
+<PageTitle>Registro de Auditoría — QMSFlowDoc</PageTitle>
+
+<div class="container-fluid py-4 px-4">
+    @if (!isAuthorized)
+    {
+        <div class="alert alert-danger rounded-4 shadow-sm p-4 d-flex align-items-center" role="alert">
+            <i class="bi bi-shield-lock-fill fs-1 me-4"></i>
+            <div>
+                <h4 class="alert-heading fw-bold mb-1">Acceso Denegado</h4>
+                <p class="mb-0">No tiene permisos de lectura suficientes para acceder a los registros de auditoría del sistema (ISO 15189 §8.4 / 8.8).</p>
+            </div>
+        </div>
+    }
+    else
+    {
+        <!-- Header -->
+        <div class="d-flex justify-content-between align-items-center mb-4 pb-2 border-bottom">
+            <div>
+                <h2 class="fw-bold text-dark mb-1">
+                    <i class="bi bi-journal-text text-primary me-2"></i>Auditoría del Sistema
+                </h2>
+                <p class="text-muted mb-0">Trazabilidad y control transversal de acciones sobre no conformidades, personal, documentos y equipamiento (ISO 15189:2022 §8.4).</p>
+            </div>
+            <button class="btn btn-primary rounded-pill px-4" @onclick="ExportToCsv">
+                <i class="bi bi-file-earmark-spreadsheet me-2"></i>Exportar CSV
+            </button>
+        </div>
+
+        <!-- Filters Bar -->
+        <div class="card border-0 shadow-sm rounded-4 mb-4 bg-light">
+            <div class="card-body p-4">
+                <div class="row g-3">
+                    <div class="col-md-3">
+                        <label class="form-label small fw-semibold text-secondary">Desde</label>
+                        <input type="date" class="form-control form-control-premium" @bind="filterStartDate" @bind:after="ApplyFilters" />
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label small fw-semibold text-secondary">Hasta</label>
+                        <input type="date" class="form-control form-control-premium" @bind="filterEndDate" @bind:after="ApplyFilters" />
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label small fw-semibold text-secondary">Acción</label>
+                        <select class="form-select form-select-premium" @bind="filterAction" @bind:after="ApplyFilters">
+                            <option value="">Todas</option>
+                            <option value="CREATE">Creación</option>
+                            <option value="EDIT">Edición</option>
+                            <option value="STATUS_CHANGE">Cambio Estado</option>
+                            <option value="SOFT_DELETE">Borrado lógico</option>
+                            <option value="COMPLETE">Completar CAPA</option>
+                            <option value="ACCEPTANCE">Aceptación</option>
+                        </select>
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label small fw-semibold text-secondary">Buscar término</label>
+                        <div class="input-group">
+                            <span class="input-group-text bg-white border-end-0 border-premium"><i class="bi bi-search text-muted"></i></span>
+                            <input type="text" class="form-control border-start-0 border-premium form-control-premium" placeholder="Usuario, detalles, entidad..." @bind="searchTerm" @bind:event="oninput" @bind:after="ApplyFilters" />
+                        </div>
+                    </div>
+                </div>
+                <div class="d-flex justify-content-end gap-2 mt-3">
+                    <button class="btn btn-outline-secondary btn-sm rounded-pill px-3" @onclick="ClearFilters">
+                        Limpiar Filtros
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Audit Logs Table -->
+        <div class="card border-0 shadow-sm rounded-4">
+            <div class="card-body p-0">
+                @if (filteredLogs == null)
+                {
+                    <div class="d-flex justify-content-center align-items-center py-5">
+                        <div class="spinner-border text-primary" role="status">
+                            <span class="visually-hidden">Cargando...</span>
+                        </div>
+                    </div>
+                }
+                else if (!filteredLogs.Any())
+                {
+                    <div class="text-center py-5 text-muted">
+                        <i class="bi bi-journal-x fs-1 opacity-50 mb-3 d-block"></i>
+                        <h5 class="fw-semibold">No se encontraron registros de auditoría</h5>
+                        <p class="small">Intente ajustar los filtros de fecha o búsqueda.</p>
+                    </div>
+                }
+                else
+                {
+                    <div class="table-responsive rounded-4">
+                        <table class="table table-hover align-middle mb-0">
+                            <thead class="bg-light border-bottom text-secondary small fw-bold">
+                                <tr>
+                                    <th scope="col" class="ps-4 py-3">Fecha y Hora</th>
+                                    <th scope="col" class="py-3">Usuario</th>
+                                    <th scope="col" class="py-3">Acción</th>
+                                    <th scope="col" class="py-3">Entidad</th>
+                                    <th scope="col" class="py-3">Detalles</th>
+                                    <th scope="col" class="py-3 pe-4">Equipo</th>
+                                </tr>
+                            </thead>
+                            <tbody class="small">
+                                @foreach (var log in filteredLogs)
+                                {
+                                    <tr>
+                                        <td class="ps-4 py-3 text-nowrap fw-semibold text-secondary">
+                                            @log.Timestamp.ToLocalTime().ToString("dd/MM/yyyy HH:mm:ss")
+                                        </td>
+                                        <td class="py-3 fw-bold text-dark">
+                                            <i class="bi bi-person-fill me-1 text-muted"></i>@log.UserName
+                                        </td>
+                                        <td class="py-3">
+                                            <span class="badge rounded-pill px-2.5 py-1.5 @GetActionBadgeClass(log.Action)">
+                                                @log.Action
+                                            </span>
+                                        </td>
+                                        <td class="py-3 text-secondary">
+                                            @log.EntityType
+                                        </td>
+                                        <td class="py-3 text-wrap" style="max-width: 400px;">
+                                            @log.Details
+                                        </td>
+                                        <td class="py-3 text-muted text-nowrap pe-4">
+                                            <i class="bi bi-laptop me-1"></i>@log.MachineName
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                }
+            </div>
+        </div>
+    }
+</div>
+
+<style>
+    .form-control-premium, .form-select-premium {
+        border-radius: 0.75rem;
+        border: 1px solid #e2e8f0;
+        padding: 0.6rem 1rem;
+        transition: border-color 0.2s, box-shadow 0.2s;
+    }
+    .form-control-premium:focus, .form-select-premium:focus {
+        border-color: #6366f1;
+        box-shadow: 0 0 0 3px rgba(99,102,241,0.15);
+    }
+    .border-premium {
+        border-color: #e2e8f0 !important;
+    }
+    .badge {
+        font-size: 0.75rem;
+        font-weight: 600;
+    }
+</style>
+
+@code {
+    [CascadingParameter]
+    private Task<AuthenticationState>? AuthStateTask { get; set; }
+
+    private bool isAuthorized = false;
+    private List<AuditLog>? auditLogs;
+    private List<AuditLog>? filteredLogs;
+
+    // Filters
+    private DateTime? filterStartDate;
+    private DateTime? filterEndDate;
+    private string filterAction = "";
+    private string searchTerm = "";
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (AuthStateTask != null)
+        {
+            var authState = await AuthStateTask;
+            var user = authState.User;
+
+            // ISO 15189 Audits are high-level: restrict to admin, director, and quality roles
+            var hasQualityRole = (await PermissionService.GetPermissionsForUserAsync(user, "Quality")).CanRead;
+            isAuthorized = user.IsInRole("Administrador") || user.IsInRole("Director") || hasQualityRole;
+        }
+
+        if (isAuthorized)
+        {
+            await LoadLogs();
+        }
+    }
+
+    private async Task LoadLogs()
+    {
+        auditLogs = await DbContext.AuditLogs
+            .OrderByDescending(l => l.Timestamp)
+            .ToListAsync();
+        
+        ApplyFilters();
+    }
+
+    private void ApplyFilters()
+    {
+        if (auditLogs == null) return;
+
+        var query = auditLogs.AsEnumerable();
+
+        if (filterStartDate.HasValue)
+        {
+            var startUtc = filterStartDate.Value.Date.ToUniversalTime();
+            query = query.Where(l => l.Timestamp >= startUtc);
+        }
+
+        if (filterEndDate.HasValue)
+        {
+            var endUtc = filterEndDate.Value.Date.AddDays(1).AddTicks(-1).ToUniversalTime();
+            query = query.Where(l => l.Timestamp <= endUtc);
+        }
+
+        if (!string.IsNullOrWhiteSpace(filterAction))
+        {
+            query = query.Where(l => l.Action.Equals(filterAction, StringComparison.OrdinalIgnoreCase));
+        }
+
+        if (!string.IsNullOrWhiteSpace(searchTerm))
+        {
+            query = query.Where(l => 
+                l.UserName.Contains(searchTerm, StringComparison.OrdinalIgnoreCase) ||
+                l.Details.Contains(searchTerm, StringComparison.OrdinalIgnoreCase) ||
+                l.EntityType.Contains(searchTerm, StringComparison.OrdinalIgnoreCase) ||
+                l.Action.Contains(searchTerm, StringComparison.OrdinalIgnoreCase)
+            );
+        }
+
+        filteredLogs = query.ToList();
+    }
+
+    private void ClearFilters()
+    {
+        filterStartDate = null;
+        filterEndDate = null;
+        filterAction = "";
+        searchTerm = "";
+        ApplyFilters();
+    }
+
+    // Trigger filters on property changes
+    protected override void OnParametersSet()
+    {
+        ApplyFilters();
+    }
+
+    private string GetActionBadgeClass(string action) => action switch
+    {
+        "CREATE" => "bg-success-subtle text-success",
+        "EDIT" => "bg-primary-subtle text-primary",
+        "STATUS_CHANGE" => "bg-warning-subtle text-warning",
+        "SOFT_DELETE" => "bg-danger-subtle text-danger",
+        "COMPLETE" => "bg-info-subtle text-info",
+        "ACCEPTANCE" => "bg-purple-subtle text-purple", // custom style
+        _ => "bg-secondary-subtle text-secondary"
+    };
+
+    private async Task ExportToCsv()
+    {
+        if (filteredLogs == null || !filteredLogs.Any()) return;
+
+        var builder = new StringBuilder();
+        builder.AppendLine("Fecha;Usuario;Acción;Entidad;Detalles;Equipo");
+
+        foreach (var log in filteredLogs)
+        {
+            var dateStr = log.Timestamp.ToLocalTime().ToString("dd/MM/yyyy HH:mm:ss");
+            var detailsEscaped = log.Details.Replace("\"", "\"\"").Replace("\n", " ").Replace("\r", "");
+            builder.AppendLine($"\"{dateStr}\";\"{log.UserName}\";\"{log.Action}\";\"{log.EntityType}\";\"{detailsEscaped}\";\"{log.MachineName}\"");
+        }
+
+        var csvContent = builder.ToString();
+        var fileName = $"auditoria_{DateTime.Now:yyyyMMdd_HHmmss}.csv";
+        
+        await JS.InvokeVoidAsync("downloadFile", csvContent, fileName, "text/csv");
+    }
+}
