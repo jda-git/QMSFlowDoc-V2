@@ -1,4 +1,4 @@
-﻿using Microsoft.EntityFrameworkCore.Migrations;
+using Microsoft.EntityFrameworkCore.Migrations;
 
 #nullable disable
 
@@ -21,7 +21,7 @@ namespace QMSFlowDoc.Infrastructure.Migrations
                 table: "AuthorizationCatalogs",
                 type: "TEXT",
                 nullable: false,
-                defaultValue: "");
+                defaultValue: "00000000-0000-0000-0000-000000000000");
         }
 
         /// <inheritdoc />
