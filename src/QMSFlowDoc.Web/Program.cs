@@ -49,6 +49,7 @@ builder.Services.AddScoped<QMSFlowDoc.Application.Services.Identity.IUserService
 builder.Services.AddScoped<QMSFlowDoc.Application.Services.Identity.IPermissionService, QMSFlowDoc.Infrastructure.Services.Identity.PermissionService>();
 builder.Services.AddScoped<QMSFlowDoc.Application.Services.Quality.IQualityService, QMSFlowDoc.Infrastructure.Services.Quality.QualityService>();
 builder.Services.AddScoped<QMSFlowDoc.Application.Services.Equipment.IEquipmentService, QMSFlowDoc.Infrastructure.Services.Equipment.EquipmentService>();
+builder.Services.AddScoped<QMSFlowDoc.Application.Services.EQA.IEQAService, QMSFlowDoc.Infrastructure.Services.EQA.EQAService>();
 
 builder.Services.ConfigureApplicationCookie(options => {
     options.LoginPath = "/login";

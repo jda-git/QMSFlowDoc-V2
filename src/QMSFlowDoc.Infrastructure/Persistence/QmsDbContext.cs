@@ -76,7 +76,11 @@ namespace QMSFlowDoc.Infrastructure.Persistence
 
         // ── EQA ──
         public DbSet<EQAProgram> EQAPrograms => Set<EQAProgram>();
-        public DbSet<EQAResult> EQAResults => Set<EQAResult>();
+        public DbSet<EQAEnrollment> EQAEnrollments => Set<EQAEnrollment>();
+        public DbSet<EQAMapping> EQAMappings => Set<EQAMapping>();
+        public DbSet<EQARound> EQARounds => Set<EQARound>();
+        public DbSet<EQASample> EQASamples => Set<EQASample>();
+        public DbSet<EQADeviation> EQADeviations => Set<EQADeviation>();
 
         // ── Methods ──
         public DbSet<Method> Methods => Set<Method>();
@@ -657,20 +661,93 @@ namespace QMSFlowDoc.Infrastructure.Persistence
             {
                 e.ToTable("EQAPrograms");
                 e.HasKey(p => p.Id);
+                e.Property(p => p.InternalCode).HasMaxLength(50);
                 e.Property(p => p.Name).HasMaxLength(300);
                 e.Property(p => p.Provider).HasMaxLength(300);
+                e.Property(p => p.CoordinatorEntity).HasMaxLength(300);
+                e.Property(p => p.Area).HasMaxLength(150);
+                e.Property(p => p.SubArea).HasConversion<int>();
+                e.Property(p => p.SampleType).HasConversion<int>();
+                e.Property(p => p.Periodicity).HasMaxLength(100);
                 e.Property(p => p.Status).HasConversion<int>();
-                e.HasMany(p => p.Results).WithOne().HasForeignKey(r => r.ProgramId).OnDelete(DeleteBehavior.Cascade);
+                e.HasMany(p => p.Enrollments).WithOne().HasForeignKey(en => en.ProgramId).OnDelete(DeleteBehavior.Cascade);
+                e.HasMany(p => p.TestMappings).WithOne().HasForeignKey(m => m.ProgramId).OnDelete(DeleteBehavior.Cascade);
+                e.HasMany(p => p.Rounds).WithOne().HasForeignKey(r => r.ProgramId).OnDelete(DeleteBehavior.Cascade);
             });
 
-            modelBuilder.Entity<EQAResult>(e =>
+            modelBuilder.Entity<EQAEnrollment>(e =>
             {
-                e.ToTable("EQAResults");
+                e.ToTable("EQAEnrollments");
+                e.HasKey(en => en.Id);
+                e.Property(en => en.Status).HasConversion<int>();
+                e.Property(en => en.ParticipantCode).HasMaxLength(100);
+                e.Property(en => en.ExternalPlatformUrl).HasMaxLength(500);
+                e.Property(en => en.ExternalUser).HasMaxLength(150);
+                e.Property(en => en.Cost).HasColumnType("decimal(18,2)");
+                e.Property(en => en.EvidenceFileName).HasMaxLength(500);
+                e.Property(en => en.EvidenceFilePath).HasMaxLength(1000);
+            });
+
+            modelBuilder.Entity<EQAMapping>(e =>
+            {
+                e.ToTable("EQAMappings");
+                e.HasKey(m => m.Id);
+                e.Property(m => m.InternalTestName).HasMaxLength(200);
+                e.Property(m => m.Panel).HasMaxLength(150);
+                e.Property(m => m.ResultType).HasConversion<int>();
+                e.Property(m => m.CoverageLevel).HasMaxLength(100);
+                e.Property(m => m.Criticidad).HasMaxLength(50);
+            });
+
+            modelBuilder.Entity<EQARound>(e =>
+            {
+                e.ToTable("EQARounds");
                 e.HasKey(r => r.Id);
-                e.Property(r => r.CycleIdentifier).HasMaxLength(50);
+                e.Property(r => r.ExternalCode).HasMaxLength(100);
                 e.Property(r => r.Status).HasConversion<int>();
-                e.Property(r => r.Performance).HasConversion<int>();
-                e.Property(r => r.Score).HasColumnType("decimal(10,2)");
+                e.Property(r => r.RoundType).HasConversion<int>();
+                e.Property(r => r.ReportFileName).HasMaxLength(500);
+                e.Property(r => r.ReportFilePath).HasMaxLength(1000);
+                e.Property(r => r.CertificateFileName).HasMaxLength(500);
+                e.Property(r => r.CertificateFilePath).HasMaxLength(1000);
+                e.Property(r => r.GlobalOutcome).HasConversion<int>();
+                e.Property(r => r.GlobalScore).HasColumnType("decimal(10,2)");
+                e.HasMany(r => r.Samples).WithOne().HasForeignKey(s => s.RoundId).OnDelete(DeleteBehavior.Cascade);
+                e.HasMany(r => r.Deviations).WithOne().HasForeignKey(d => d.RoundId).OnDelete(DeleteBehavior.Cascade);
+            });
+
+            modelBuilder.Entity<EQASample>(e =>
+            {
+                e.ToTable("EQASamples");
+                e.HasKey(s => s.Id);
+                e.Property(s => s.InternalCode).HasMaxLength(100);
+                e.Property(s => s.ExternalCode).HasMaxLength(100);
+                e.Property(s => s.SampleType).HasMaxLength(150);
+                e.Property(s => s.ReceiptStatus).HasConversion<int>();
+                e.Property(s => s.Integrity).HasConversion<int>();
+                e.Property(s => s.TempAtReceipt).HasColumnType("decimal(6,2)");
+                e.Property(s => s.ReceivedVolume).HasColumnType("decimal(10,4)");
+                e.Property(s => s.Anticoagulant).HasMaxLength(100);
+                e.Property(s => s.FileName).HasMaxLength(500);
+                e.Property(s => s.FileFormat).HasMaxLength(50);
+                e.Property(s => s.IntegrityChecksum).HasMaxLength(100);
+                e.Property(s => s.AnalysisSoftware).HasMaxLength(150);
+                e.Property(s => s.SoftwareVersion).HasMaxLength(50);
+                e.Property(s => s.ProcessingEvidencePath).HasMaxLength(1000);
+                e.Property(s => s.SubmittedEvidencePath).HasMaxLength(1000);
+            });
+
+            modelBuilder.Entity<EQADeviation>(e =>
+            {
+                e.ToTable("EQADeviations");
+                e.HasKey(d => d.Id);
+                e.Property(d => d.DeviationType).HasMaxLength(150);
+                e.Property(d => d.Severity).HasConversion<int>();
+                e.Property(d => d.Status).HasMaxLength(50);
+                e.Property(d => d.EvidenceFileName).HasMaxLength(500);
+                e.Property(d => d.EvidenceFilePath).HasMaxLength(1000);
+                e.Property(d => d.EffectivenessOutcome).HasMaxLength(50);
+                e.Property(d => d.EffectivenessEvidencePath).HasMaxLength(1000);
             });
 
             // ── Methods ──

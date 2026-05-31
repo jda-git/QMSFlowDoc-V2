@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using QMSFlowDoc.Domain.Identity;
+using QMSFlowDoc.Domain.Entities;
 using QMSFlowDoc.Infrastructure.Persistence;
 using System;
 using System.Collections.Generic;
@@ -326,11 +327,14 @@ namespace QMSFlowDoc.Infrastructure.Seed
 
             // 5. Seed default RolePermissions
             await SeedDefaultRolePermissionsAsync(context, roleManager);
+
+            // 6. Seed EQA Programs
+            await SeedEqaProgramsAsync(context);
         }
 
         private static async Task SeedDefaultRolePermissionsAsync(QmsDbContext context, RoleManager<ApplicationRole> roleManager)
         {
-            var sections = new[] { "Documents", "Inventory", "Staff", "Quality", "Equipment" };
+            var sections = new[] { "Documents", "Inventory", "Staff", "Quality", "Equipment", "EQA" };
             
             var roles = await roleManager.Roles.ToListAsync();
             foreach (var role in roles)
@@ -440,6 +444,198 @@ namespace QMSFlowDoc.Infrastructure.Seed
                     }
                 }
             }
+            await context.SaveChangesAsync();
+        }
+
+        private static async Task SeedEqaProgramsAsync(QmsDbContext context)
+        {
+            if (await context.EQAPrograms.AnyAsync()) return;
+
+            var programs = new List<EQAProgram>
+            {
+                new()
+                {
+                    Id = Guid.NewGuid(),
+                    InternalCode = "EQA-GECLID-LYMPH",
+                    Name = "GECLID Poblaciones linfocitarias",
+                    Provider = "GECLID",
+                    CoordinatorEntity = "Sociedad Española de Inmunología",
+                    SubArea = EQASubArea.LYMPHOCYTE_POPULATIONS,
+                    SampleType = EQASampleType.Physical,
+                    Periodicity = "Semestral",
+                    ExpectedRoundsPerYear = 2,
+                    ExpectedSamplesPerRound = 5,
+                    CoveredTests = "Subpoblaciones linfocitarias T/B/NK",
+                    EvaluatedParameters = "CD45+, CD3+, CD19+, NK, CD4+, CD8+",
+                    TargetResult = "Concordancia con el consenso interlaboratorio > 95%",
+                    GeneralAcceptanceCriteria = "Z-Score <= 2.0 respecto a la media del grupo",
+                    Status = EQAStatus.ACTIVE,
+                    Notes = "Programa de inmunidad celular de poblaciones linfocitarias (10 muestras anuales distribuidas en dos envíos)."
+                },
+                new()
+                {
+                    Id = Guid.NewGuid(),
+                    InternalCode = "EQA-GECLID-CD34",
+                    Name = "GECLID CD34 / Stem Cells",
+                    Provider = "GECLID",
+                    CoordinatorEntity = "Sociedad Española de Inmunología",
+                    SubArea = EQASubArea.CD34,
+                    SampleType = EQASampleType.Physical,
+                    Periodicity = "Semestral",
+                    ExpectedRoundsPerYear = 2,
+                    ExpectedSamplesPerRound = 2,
+                    CoveredTests = "Cuantificación de progenitores hematopoyéticos CD34+",
+                    EvaluatedParameters = "CD34+ abs/uL, CD34+ viables %, CD45+ viables %, Viabilidad %",
+                    TargetResult = "Concordancia con el consenso interlaboratorio > 90%",
+                    GeneralAcceptanceCriteria = "Z-Score <= 2.0",
+                    Status = EQAStatus.ACTIVE,
+                    Notes = "Programa de control de calidad para células madre CD34+/CD45+ viables."
+                },
+                new()
+                {
+                    Id = Guid.NewGuid(),
+                    InternalCode = "EQA-SIC-LEU",
+                    Name = "SIC-SEHH Inmunofenotipaje de leucemias y linfomas",
+                    Provider = "SIC-SEHH",
+                    CoordinatorEntity = "Sociedad Ibérica de Citometría",
+                    SubArea = EQASubArea.LEUKEMIA_LYMPHOMA,
+                    SampleType = EQASampleType.FCS,
+                    Periodicity = "Cuatrimestral",
+                    ExpectedRoundsPerYear = 3,
+                    ExpectedSamplesPerRound = 1,
+                    CoveredTests = "Diagnóstico inmunofenotípico de hemopatías malignas",
+                    EvaluatedParameters = "Linaje, Orientación diagnóstica, Fenotipo aberrante, Conclusión",
+                    TargetResult = "Concordancia diagnóstica del 100% en linaje",
+                    GeneralAcceptanceCriteria = "Consenso diagnóstico de expertos del panel",
+                    Status = EQAStatus.ACTIVE,
+                    Notes = "Inmunofenotipaje de leucemias y linfomas por análisis de ficheros FCS virtuales."
+                },
+                new()
+                {
+                    Id = Guid.NewGuid(),
+                    InternalCode = "EQA-SIC-LCR",
+                    Name = "SIC-SEHH Subpoblaciones linfoides / LCR",
+                    Provider = "SIC-SEHH",
+                    CoordinatorEntity = "Sociedad Ibérica de Citometría",
+                    SubArea = EQASubArea.LCR,
+                    SampleType = EQASampleType.Mixed,
+                    Periodicity = "Semestral",
+                    ExpectedRoundsPerYear = 2,
+                    ExpectedSamplesPerRound = 1,
+                    CoveredTests = "Estudio de infiltración por citometría en LCR",
+                    EvaluatedParameters = "Población patológica %, Fenotipo patológico, Poblaciones acompañantes",
+                    TargetResult = "Identificación correcta de la presencia/ausencia de infiltración",
+                    GeneralAcceptanceCriteria = "Concordancia cualitativa y cuantitativa con consenso",
+                    Status = EQAStatus.ACTIVE,
+                    Notes = "Estudio de subpoblaciones linfoides y detección de infiltración tumoral en líquido cefalorraquídeo."
+                },
+                new()
+                {
+                    Id = Guid.NewGuid(),
+                    InternalCode = "EQA-SIC-HPN",
+                    Name = "SIC-SEHH HPN",
+                    Provider = "SIC-SEHH",
+                    CoordinatorEntity = "Sociedad Ibérica de Citometría",
+                    SubArea = EQASubArea.HPN,
+                    SampleType = EQASampleType.FCS,
+                    Periodicity = "Cuatrimestral",
+                    ExpectedRoundsPerYear = 3,
+                    ExpectedSamplesPerRound = 1,
+                    CoveredTests = "Detección y cuantificación de clones GPI-deficientes",
+                    EvaluatedParameters = "Presencia/Ausencia de clon HPN, % clon en granulocitos, % clon en monocitos",
+                    TargetResult = "Detección correcta del clon HPN",
+                    GeneralAcceptanceCriteria = "Z-Score <= 2.0 para porcentaje cuantitativo",
+                    Status = EQAStatus.ACTIVE,
+                    Notes = "Detección y Diagnóstico de Hemoglobinuria Paroxística Nocturna mediante ficheros FCS virtuales."
+                },
+                new()
+                {
+                    Id = Guid.NewGuid(),
+                    InternalCode = "EQA-SIC-EMRMM",
+                    Name = "SIC-SEHH EMR-MM",
+                    Provider = "SIC-SEHH",
+                    CoordinatorEntity = "Sociedad Ibérica de Citometría",
+                    SubArea = EQASubArea.EMR_MM,
+                    SampleType = EQASampleType.FCS,
+                    Periodicity = "Cuatrimestral",
+                    ExpectedRoundsPerYear = 3,
+                    ExpectedSamplesPerRound = 1,
+                    CoveredTests = "Enfermedad mínima residual en mieloma múltiple",
+                    EvaluatedParameters = "Presencia/Ausencia de células plasmáticas aberrantes, % EMR, Sensibilidad",
+                    TargetResult = "Cuantificación correcta de EMR en niveles ultrasensibles (< 10^-5)",
+                    GeneralAcceptanceCriteria = "Detección cualitativa coherente y Z-Score <= 2.0 cuantitativo",
+                    Status = EQAStatus.ACTIVE,
+                    Notes = "Seguimiento de Enfermedad Mínima Residual en Mieloma Múltiple (cuatrimestral virtual)."
+                },
+                new()
+                {
+                    Id = Guid.NewGuid(),
+                    InternalCode = "EQA-SIC-EMRLLA",
+                    Name = "SIC-SEHH EMR-LLA",
+                    Provider = "SIC-SEHH",
+                    CoordinatorEntity = "Sociedad Ibérica de Citometría",
+                    SubArea = EQASubArea.EMR_LLA,
+                    SampleType = EQASampleType.FCS,
+                    Periodicity = "Cuatrimestral",
+                    ExpectedRoundsPerYear = 3,
+                    ExpectedSamplesPerRound = 1,
+                    CoveredTests = "Enfermedad mínima residual en LLA",
+                    EvaluatedParameters = "Presencia/Ausencia de EMR, % EMR, Fenotipo aberrante",
+                    TargetResult = "Detección cualitativa exacta de la población leucémica residual",
+                    GeneralAcceptanceCriteria = "Consenso del grupo de análisis de EMR-LLA",
+                    Status = EQAStatus.ACTIVE,
+                    Notes = "Seguimiento de Enfermedad Mínima Residual en Leucemia Linfoblástica Aguda mediante ficheros FCS."
+                }
+            };
+
+            context.EQAPrograms.AddRange(programs);
+            await context.SaveChangesAsync();
+
+            // Seed initial rounds for 2026 for demonstration
+            var year = 2026;
+            foreach (var program in programs)
+            {
+                for (int r = 1; r <= program.ExpectedRoundsPerYear; r++)
+                {
+                    var round = new EQARound
+                    {
+                        Id = Guid.NewGuid(),
+                        ProgramId = program.Id,
+                        Year = year,
+                        RoundNumber = r,
+                        ExternalCode = $"{program.InternalCode}-2026-R{r}",
+                        ExpectedReceiptDate = new DateTime(year, (r * 4) - 3, 15),
+                        SubmissionDeadline = new DateTime(year, (r * 4) - 2, 15),
+                        ExpectedReportDate = new DateTime(year, (r * 4) - 1, 15),
+                        Status = EQARoundStatus.PLANNED,
+                        RoundType = program.SampleType,
+                        Notes = $"Ronda de evaluación número {r} planificada para el año {year}."
+                    };
+
+                    // Add dummy sample metadata
+                    for (int s = 1; s <= program.ExpectedSamplesPerRound; s++)
+                    {
+                        round.Samples.Add(new EQASample
+                        {
+                            Id = Guid.NewGuid(),
+                            RoundId = round.Id,
+                            InternalCode = $"{round.ExternalCode}-M{s}",
+                            ExternalCode = $"Muestra {s}",
+                            SampleType = program.SubArea switch
+                            {
+                                EQASubArea.LCR => "Líquido Cefalorraquídeo (LCR)",
+                                EQASubArea.EMR_MM or EQASubArea.EMR_LLA => "Médula Ósea",
+                                _ => "Sangre Periférica"
+                            },
+                            ReceiptStatus = EQASampleStatus.CORRECT,
+                            Integrity = EQAIntegrity.CORRECT
+                        });
+                    }
+
+                    context.EQARounds.Add(round);
+                }
+            }
+
             await context.SaveChangesAsync();
         }
     }
