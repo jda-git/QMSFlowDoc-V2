@@ -449,6 +449,22 @@ namespace QMSFlowDoc.Infrastructure.Seed
 
         private static async Task SeedEqaProgramsAsync(QmsDbContext context)
         {
+            try
+            {
+                // Force EF to load programs to check if there are Guid formatting errors
+                var allProgs = await context.EQAPrograms.ToListAsync();
+            }
+            catch (Exception ex) when (ex is FormatException || ex.InnerException is FormatException)
+            {
+                Console.WriteLine("⚠ Invalid Guid format in legacy EQA programs. Purging EQA tables to seed new clean schema...");
+                await context.Database.ExecuteSqlRawAsync("DELETE FROM EQADeviations;");
+                await context.Database.ExecuteSqlRawAsync("DELETE FROM EQASamples;");
+                await context.Database.ExecuteSqlRawAsync("DELETE FROM EQARounds;");
+                await context.Database.ExecuteSqlRawAsync("DELETE FROM EQAMappings;");
+                await context.Database.ExecuteSqlRawAsync("DELETE FROM EQAEnrollments;");
+                await context.Database.ExecuteSqlRawAsync("DELETE FROM EQAPrograms;");
+            }
+
             if (await context.EQAPrograms.AnyAsync()) return;
 
             var programs = new List<EQAProgram>
